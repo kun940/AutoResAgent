@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>客诉服务大厅</title>
+    <link rel="stylesheet" href="https://unpkg.com/vant@4/lib/index.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #F7F8FA; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 100vh; }
+        .page-wrap { max-width: 750px; margin: 0 auto; padding-bottom: 100px; }
+        .header { position: fixed; top: 0; left: 0; right: 0; z-index: 100; }
+        .header-inner { background: #1989FA; color: #fff; text-align: center; padding: 14px 16px; font-size: 17px; font-weight: 600; letter-spacing: 1px; max-width: 750px; margin: 0 auto; }
+        .content { padding-top: 50px; }
+        .form-section { margin: 12px 12px 0; }
+        .submit-area { padding: 16px 12px; }
+        .bottom-link { text-align: center; padding: 16px 0 32px; }
+        .bottom-link a { color: #1989FA; font-size: 14px; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div id="app" class="page-wrap">
+        <div class="header">
+            <div class="header-inner">客诉服务大厅</div>
+        </div>
+
+        <div class="content">
+            <div class="form-section">
+                <van-field
+                    v-model="complaintText"
+                    label="问题描述"
+                    type="textarea"
+                    placeholder="请描述您遇到的问题，如：订单号JD9988776655，Pro-Max-V2型号，设备冒烟"
+                    rows="4"
+                    autosize
+                    maxlength="500"
+                    show-word-limit
+                    required
+                ></van-field>
+            </div>
+
+            <div class="form-section">
+                <van-field label="图片上传">
+                    <template #input>
+                        <van-uploader
+                            v-model="fileList"
+                            :max-count="5"
+                            :max-size="10485760"
+                            accept="image/*"
+                            :after-read="onAfterRead"
+                            @oversize="onOversize"
+                        ></van-uploader>
+                    </template>
+                </van-field>
+            </div>
+
+            <div class="form-section">
+                <van-field
+                    v-model="phone"
+                    label="联系电话"
+                    type="tel"
+                    placeholder="选填，方便我们联系您"
+                    maxlength="11"
+                ></van-field>
+            </div>
+
+            <div class="submit-area">
+                <van-button type="primary" block size="large" :loading="submitting" loading-text="提交中..." @click="handleSubmit">
+                    提交客诉
+                </van-button>
+            </div>
+
+            <div class="bottom-link">
+                <a href="query.html">已有工单？输入工单号查询 →</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://unpkg.com/vant@4/lib/vant.min.js"></script>
+    <script>
+        async function apiSubmit(formData) {
+            const resp = await fetch('/api/v1/customer/submit', {
+                method: 'POST',
+                body: formData
+            });
+            const json = await resp.json();
+            if (json.code === 0) return json.data;
+            throw new Error(json.message || '提交失败');
+        }
+
+        function compressImage(file, maxWidth, quality) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let w = img.width, h = img.height;
+                        if (w > maxWidth) { h = h * maxWidth / w; w = maxWidth; }
+                        canvas.width = w;
+                        canvas.height = h;
+                        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                        canvas.toBlob(resolve, 'image/jpeg', quality);
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        const app = Vue.createApp({
+            data() {
+                return {
+                    complaintText: '',
+                    phone: '',
+                    fileList: [],
+                    submitting: false,
+                    compressedBlobs: []
+                };
+            },
+            methods: {
+                onAfterRead(file) {
+                    if (Array.isArray(file)) {
+                        file.forEach(f => this._compressOne(f));
+                    } else {
+                        this._compressOne(file);
+                    }
+                },
+
+                async _compressOne(fileItem) {
+                    if (fileItem.file) {
+                        try {
+                            const blob = await compressImage(fileItem.file, 1200, 0.8);
+                            const idx = this.fileList.indexOf(fileItem);
+                            if (idx !== -1) {
+                                this.compressedBlobs[idx] = blob;
+                            }
+                        } catch (e) {
+                            const idx = this.fileList.indexOf(fileItem);
+                            if (idx !== -1) {
+                                this.compressedBlobs[idx] = fileItem.file;
+                            }
+                        }
+                    }
+                },
+
+                onOversize() {
+                    vant.showToast('图片大小不能超过10MB');
+                },
+
+                async handleSubmit() {
+                    const text = this.complaintText.trim();
+                    if (!text) {
+                        vant.showToast('请输入问题描述');
+                        return;
+                    }
+                    if (text.length < 10) {
+                        vant.showToast('问题描述至少10个字');
+                        return;
+                    }
+                    if (this.phone && !/^1[3-9]\d{9}$/.test(this.phone)) {
+                        vant.showToast('请输入正确的手机号');
+                        return;
+                    }
+
+                    this.submitting = true;
+                    const formData = new FormData();
+                    formData.append('text', text);
+                    if (this.phone) {
+                        formData.append('customer_phone', this.phone);
+                    }
+
+                    for (let i = 0; i < this.fileList.length; i++) {
+                        const blob = this.compressedBlobs[i] || (this.fileList[i] && this.fileList[i].file);
+                        if (blob) {
+                            const filename = blob instanceof File ? blob.name : `image_${i}.jpg`;
+                            formData.append('images', blob, filename);
+                        }
+                    }
+
+                    try {
+                        const data = await apiSubmit(formData);
+                        sessionStorage.setItem('complaint_result', JSON.stringify(data));
+                        window.location.href = 'result.html';
+                    } catch (e) {
+                        if (e.message && e.message.includes('Failed to fetch')) {
+                            vant.showToast('网络异常，请检查网络连接');
+                        } else {
+                            vant.showToast(e.message || '提交失败，请稍后重试');
+                        }
+                    } finally {
+                        this.submitting = false;
+                    }
+                }
+            }
+        });
+
+        app.use(vant);
+        app.mount('#app');
+    </script>
+</body>
+</html>
