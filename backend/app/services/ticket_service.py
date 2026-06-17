@@ -112,6 +112,22 @@ class TicketService:
         db.add(log)
         await db.flush()
 
+        # Step5: 出单决策 - 工单入库后自动出单
+        try:
+            from agent.core.order_engine import OrderEngine
+            order_engine = OrderEngine()
+            order_result = await order_engine.decide_and_create(
+                ticket_id=result["ticket_id"],
+                issue_category=result.get("issue_category", "Other"),
+                urgency_level=result.get("urgency_level", "Medium_Priority"),
+                extracted_data=result.get("extracted_data", {}),
+                db=db,
+            )
+            result["order_result"] = order_result
+        except Exception as e:
+            logger.error(f"Order engine failed: {e}")
+            result["order_result"] = None
+
         return result
 
     async def get_ticket(self, db: AsyncSession, ticket_id: str) -> Optional[Ticket]:

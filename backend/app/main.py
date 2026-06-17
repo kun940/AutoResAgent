@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend.app.config import settings
-from backend.app.api import tickets, notifications, knowledge, dashboard, upload, auth, customer
+from backend.app.api import tickets, notifications, knowledge, dashboard, upload, auth, customer, orders, quality
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,8 +30,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="客诉自动回复出单智能体 API",
-    description="基于大模型Agent的客诉自动回复、智能定级与工单分发系统 v1.0",
-    version="1.0.0",
+    description="基于大模型Agent的客诉自动回复、智能定级与工单分发系统 v1.1 - 新增出单管理、质量追溯、批量操作等功能",
+    version="1.1.0",
     lifespan=lifespan,
 )
 
@@ -50,6 +50,8 @@ app.include_router(dashboard.router, prefix="/api/v1/dashboard")
 app.include_router(upload.router, prefix="/api/v1/upload")
 app.include_router(auth.router, prefix="/api/v1/auth")
 app.include_router(customer.router, prefix="/api/v1/customer")
+app.include_router(orders.router, prefix="/api/v1/orders")
+app.include_router(quality.router, prefix="/api/v1/quality")
 
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 os.makedirs(os.path.join(static_dir, "h5"), exist_ok=True)
@@ -60,7 +62,7 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 @app.get("/")
 async def root():
-    return {"message": "客诉自动回复出单智能体 API v1.0", "status": "running"}
+    return {"message": "客诉自动回复出单智能体 API v1.1", "status": "running"}
 
 
 @app.get("/health")

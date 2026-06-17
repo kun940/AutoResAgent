@@ -3,13 +3,15 @@ import os
 import shutil
 import tempfile
 import time
+from datetime import datetime
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QLabel, QPushButton, QStackedWidget, QFrame, QSizePolicy
+    QLabel, QPushButton, QStackedWidget, QFrame, QSizePolicy,
+    QSystemTrayIcon, QMenu
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QIcon, QFont
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt6.QtGui import QIcon, QFont, QAction
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from desktop.api_client import ApiClient
@@ -17,6 +19,8 @@ from desktop.views.login_view import LoginWindow
 from desktop.views.dashboard_view import DashboardView
 from desktop.views.submit_complaint_view import SubmitComplaintView
 from desktop.views.ticket_list_view import TicketListView
+from desktop.views.order_manage_view import OrderManageView
+from desktop.views.quality_analysis_view import QualityAnalysisView
 from desktop.views.settings_view import SettingsView
 
 
@@ -30,6 +34,30 @@ class HealthCheckThread(QThread):
     def run(self):
         is_healthy = self.api_client.check_health()
         self.result_ready.emit(is_healthy)
+
+
+class NewTicketCheckThread(QThread):
+    """新工单轮询线程"""
+    result_ready = pyqtSignal(object)  # 返回新工单列表或None
+
+    def __init__(self, api_client, since=None):
+        super().__init__()
+        self.api_client = api_client
+        self.since = since
+
+    def run(self):
+        try:
+            result = self.api_client.get_tickets(
+                status="pending",
+                page=1,
+                page_size=5
+            )
+            if result and result.get("total", 0) > 0:
+                self.result_ready.emit(result)
+            else:
+                self.result_ready.emit(None)
+        except Exception:
+            self.result_ready.emit(None)
 
 
 class NavButton(QPushButton):
@@ -46,12 +74,12 @@ class NavButton(QPushButton):
 
 
 # 角色可见页面配置：角色 -> 允许的页面索引列表
-# 页面索引：0=主看板, 1=提交客诉, 2=工单列表, 3=系统设置
+# 页面索引：0=主看板, 1=提交客诉, 2=工单列表, 3=出单管理, 4=质量分析, 5=系统设置
 ROLE_NAV_MAP = {
-    "frontline_staff": [0, 1, 2],       # 主看板、提交客诉、工单列表
-    "department_manager": [0, 1, 2],     # 主看板、提交客诉、工单列表
-    "general_manager": [0, 1, 2, 3],    # 全部页面
-    "admin": [0, 1, 2, 3],             # 全部页面
+    "frontline_staff": [0, 1, 2, 3],             # 主看板、提交客诉、工单列表、出单管理
+    "department_manager": [0, 1, 2, 3, 4],        # 主看板、提交客诉、工单列表、出单管理、质量分析
+    "general_manager": [0, 1, 2, 3, 4, 5],       # 全部页面
+    "admin": [0, 1, 2, 3, 4, 5],                  # 全部页面
 }
 
 
@@ -89,6 +117,8 @@ class SidebarWidget(QWidget):
             ("主看板", "\U0001F4CA"),
             ("提交客诉", "\U0001F4E4"),
             ("工单列表", "\U0001F4CB"),
+            ("出单管理", "\U0001F4E6"),
+            ("质量分析", "\U0001F52C"),
             ("系统设置", "\u2699\uFE0F"),
         ]
 
@@ -172,8 +202,13 @@ class MainWindow(QMainWindow):
 
         self.api_client = api_client or ApiClient()
         self._role = self.api_client.user_info.get("role", "frontline_staff") if self.api_client.user_info else "frontline_staff"
+        self._is_quitting = False
+        self._last_ticket_count = 0
+        self._new_ticket_thread = None
         self._setup_ui()
+        self._setup_tray_icon()
         self._check_backend_health()
+        self._start_new_ticket_polling()
 
         if self.api_client.user_info:
             username = self.api_client.user_info.get("username", "")
@@ -216,7 +251,7 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.stack.setObjectName("content_area")
 
-        page_titles = ["主看板", "提交客诉", "工单列表", "系统设置"]
+        page_titles = ["主看板", "提交客诉", "工单列表", "出单管理", "质量分析", "系统设置"]
         for title in page_titles:
             page = PlaceholderPage(title)
             self.stack.addWidget(page)
@@ -228,7 +263,11 @@ class MainWindow(QMainWindow):
         self.stack.removeWidget(self.stack.widget(2))
         self.stack.insertWidget(2, TicketListView(self.api_client, role=self._role))
         self.stack.removeWidget(self.stack.widget(3))
-        self.stack.insertWidget(3, SettingsView(self.api_client))
+        self.stack.insertWidget(3, OrderManageView(self.api_client, role=self._role))
+        self.stack.removeWidget(self.stack.widget(4))
+        self.stack.insertWidget(4, QualityAnalysisView(self.api_client, role=self._role))
+        self.stack.removeWidget(self.stack.widget(5))
+        self.stack.insertWidget(5, SettingsView(self.api_client))
 
         right_layout.addWidget(self.stack)
         main_layout.addWidget(right_container)
@@ -247,10 +286,149 @@ class MainWindow(QMainWindow):
     def _on_logout(self):
         self.api_client.token = None
         self.api_client.user_info = None
+        # 停止轮询
+        if hasattr(self, '_poll_timer'):
+            self._poll_timer.stop()
+        # 隐藏托盘图标
+        if hasattr(self, 'tray_icon'):
+            self.tray_icon.hide()
         login_window = LoginWindow(self.api_client)
         login_window.login_success.connect(lambda user_info: _on_login_success(login_window, self.api_client))
         login_window.show()
         self.close()
+
+    def _setup_tray_icon(self):
+        """设置系统托盘图标"""
+        self.tray_icon = QSystemTrayIcon(self)
+        # 使用系统标准图标
+        self.tray_icon.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_ComputerIcon))
+        self.tray_icon.setToolTip("客诉自动回复出单智能体")
+
+        # 托盘菜单
+        tray_menu = QMenu()
+
+        show_action = tray_menu.addAction("显示主窗口")
+        show_action.triggered.connect(self._show_normal)
+
+        tray_menu.addSeparator()
+
+        quit_action = tray_menu.addAction("退出")
+        quit_action.triggered.connect(self._quit_app)
+
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.activated.connect(self._tray_icon_activated)
+        self.tray_icon.show()
+
+    def _show_normal(self):
+        """从托盘恢复主窗口"""
+        self.showNormal()
+        self.activateWindow()
+
+    def _tray_icon_activated(self, reason):
+        """托盘图标激活事件"""
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self._show_normal()
+
+    def _quit_app(self):
+        """真正退出应用"""
+        self._is_quitting = True
+        if hasattr(self, '_poll_timer'):
+            self._poll_timer.stop()
+        if hasattr(self, 'tray_icon'):
+            self.tray_icon.hide()
+        QApplication.quit()
+
+    def closeEvent(self, event):
+        """关闭时最小化到托盘而非退出"""
+        if self._is_quitting:
+            event.accept()
+            return
+        event.ignore()
+        self.hide()
+        self.tray_icon.showMessage(
+            "客诉自动回复出单智能体",
+            "程序已最小化到系统托盘，双击图标可恢复窗口",
+            QSystemTrayIcon.MessageIcon.Information,
+            2000
+        )
+
+    def _start_new_ticket_polling(self):
+        """启动新工单轮询定时器（每30秒）"""
+        self._poll_timer = QTimer(self)
+        self._poll_timer.timeout.connect(self._check_new_tickets)
+        self._poll_timer.start(30000)  # 30秒
+        # 首次立即检查
+        self._check_new_tickets()
+
+    def _check_new_tickets(self):
+        """检查是否有新工单"""
+        if self._new_ticket_thread and self._new_ticket_thread.isRunning():
+            return
+        self._new_ticket_thread = NewTicketCheckThread(self.api_client)
+        self._new_ticket_thread.result_ready.connect(self._on_new_tickets_checked)
+        self._new_ticket_thread.start()
+
+    def _on_new_tickets_checked(self, result):
+        """新工单检查结果回调"""
+        if result is None:
+            return
+
+        total = result.get("total", 0)
+        tickets = result.get("data", [])
+
+        # 首次加载只记录数量，不弹通知
+        if self._last_ticket_count == 0:
+            self._last_ticket_count = total
+            return
+
+        # 有新增工单
+        if total > self._last_ticket_count:
+            new_count = total - self._last_ticket_count
+            self._last_ticket_count = total
+
+            # 通过系统托盘弹出通知
+            if tickets:
+                # 取最新的一条工单信息
+                latest = tickets[0]
+                ticket_id = latest.get("ticket_id", "-")
+                urgency = latest.get("urgency_level", "")
+                urgency_labels = {
+                    "High_Priority": "高紧急",
+                    "Medium_Priority": "中紧急",
+                    "Low_Priority": "低紧急",
+                }
+                category = latest.get("issue_category", "")
+                category_labels = {
+                    "Missing_Parts": "配件缺失",
+                    "Operation_Error": "操作错误",
+                    "Software_Bug": "软件缺陷",
+                    "Hardware_Malfunction": "硬件故障",
+                    "Other": "其他",
+                }
+
+                urgency_text = urgency_labels.get(urgency, urgency or "")
+                category_text = category_labels.get(category, category or "")
+
+                message = f"您有 {new_count} 个新工单\n"
+                message += f"最新：{ticket_id}\n"
+                if urgency_text:
+                    message += f"紧急度：{urgency_text}\n"
+                if category_text:
+                    message += f"分类：{category_text}"
+
+                self.tray_icon.showMessage(
+                    "新工单通知",
+                    message,
+                    QSystemTrayIcon.MessageIcon.Information,
+                    5000
+                )
+            else:
+                self.tray_icon.showMessage(
+                    "新工单通知",
+                    f"您有 {new_count} 个新工单待处理",
+                    QSystemTrayIcon.MessageIcon.Information,
+                    3000
+                )
 
 
 def load_stylesheet(app):

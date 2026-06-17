@@ -1,0 +1,60 @@
+from datetime import datetime, date
+from typing import Optional, List, Dict, Any
+
+from pydantic import BaseModel
+
+
+class QualityTraceQuery(BaseModel):
+    """质量追溯查询参数"""
+    model_number: Optional[str] = None
+    batch_code: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    issue_category: Optional[str] = None
+    order_type: Optional[str] = None
+    group_by: str = "model"  # model/batch/date/category
+    page: int = 1
+    page_size: int = 20
+
+
+class QualityDashboardQuery(BaseModel):
+    """质量看板查询参数"""
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    model_number: Optional[str] = None
+
+
+class QualityExportQuery(BaseModel):
+    """质量报表导出参数"""
+    format: str = "xlsx"  # csv/xlsx
+    model_number: Optional[str] = None
+    batch_code: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+
+class QualityTraceGroup(BaseModel):
+    """质量追溯分组数据"""
+    dimension: str
+    ticket_count: int = 0
+    order_count: int = 0
+    category_distribution: Optional[Dict[str, int]] = None
+    order_type_distribution: Optional[Dict[str, int]] = None
+    urgency_distribution: Optional[Dict[str, int]] = None
+    avg_resolution_days: Optional[float] = None
+    high_priority_count: int = 0
+
+
+class QualityTraceResponse(BaseModel):
+    """质量追溯响应"""
+    summary: Dict[str, Any]
+    groups: List[QualityTraceGroup]
+
+
+class QualityDashboardResponse(BaseModel):
+    """质量看板响应"""
+    overview: Dict[str, Any]
+    trend: Dict[str, Any]
+    top_models: List[Dict[str, Any]]
+    category_distribution: Dict[str, int]
+    order_type_distribution: Dict[str, int]

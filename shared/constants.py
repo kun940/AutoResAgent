@@ -21,6 +21,7 @@ class UserRole(str, Enum):
     FRONTLINE_STAFF = "frontline_staff"
     DEPARTMENT_MANAGER = "department_manager"
     GENERAL_MANAGER = "general_manager"
+    QC_STAFF = "qc_staff"
 
 
 class IssueCategory(str, Enum):
@@ -61,6 +62,7 @@ class NotificationType(str, Enum):
     ESCALATION = "escalation"
     SLA_WARNING = "sla_warning"
     REASSIGN = "reassign"
+    ORDER_CREATED = "order_created"
 
 
 class TicketAction(str, Enum):
@@ -68,6 +70,7 @@ class TicketAction(str, Enum):
     ESCALATION = "escalation"
     REASSIGN = "reassign"
     NOTE = "note"
+    ORDER_CREATED = "order_created"
 
 
 TICKET_STATUS_TRANSITIONS = {
@@ -94,4 +97,63 @@ MANUAL_ESCALATION_PERMISSIONS = {
     UserRole.FRONTLINE_STAFF: [UrgencyLevel.MEDIUM],
     UserRole.DEPARTMENT_MANAGER: [UrgencyLevel.HIGH],
     UserRole.ADMIN: [UrgencyLevel.LOW, UrgencyLevel.MEDIUM, UrgencyLevel.HIGH],
+}
+
+
+class OrderType(str, Enum):
+    REPLACEMENT = "Replacement"
+    REPAIR = "Repair"
+    RETURN_EXCHANGE = "Return_Exchange"
+    TECH_SUPPORT = "Tech_Support"
+    QC = "QC"
+
+
+class OrderStatus(str, Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    EXECUTING = "executing"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+class OrderTicketStatus(str, Enum):
+    NONE = "none"
+    PENDING_MANUAL = "pending_manual"
+    ORDERED = "ordered"
+
+
+ORDER_TYPE_PREFIX = {
+    OrderType.REPLACEMENT: "REP",
+    OrderType.REPAIR: "RPR",
+    OrderType.RETURN_EXCHANGE: "RTE",
+    OrderType.TECH_SUPPORT: "TCH",
+    OrderType.QC: "QCI",
+}
+
+ORDER_TYPE_LABELS = {
+    OrderType.REPLACEMENT: "补发单",
+    OrderType.REPAIR: "维修单",
+    OrderType.RETURN_EXCHANGE: "退换单",
+    OrderType.TECH_SUPPORT: "技术支援单",
+    OrderType.QC: "质检单",
+}
+
+ORDER_STATUS_TRANSITIONS = {
+    OrderStatus.PENDING: [OrderStatus.PROCESSING, OrderStatus.CANCELLED],
+    OrderStatus.PROCESSING: [OrderStatus.EXECUTING, OrderStatus.CANCELLED],
+    OrderStatus.EXECUTING: [OrderStatus.COMPLETED, OrderStatus.CANCELLED],
+    OrderStatus.COMPLETED: [],
+    OrderStatus.CANCELLED: [],
+}
+
+DEFAULT_ORDER_MAPPING = {
+    IssueCategory.MISSING_PARTS: [OrderType.REPLACEMENT],
+    IssueCategory.OPERATION_ERROR: [OrderType.TECH_SUPPORT],
+    IssueCategory.SOFTWARE_BUG: [OrderType.TECH_SUPPORT],
+    IssueCategory.HARDWARE_MALFUNCTION: [OrderType.REPAIR],
+    IssueCategory.HARDWARE_THERMAL_RUNAWAY: [OrderType.REPAIR],
+    IssueCategory.ELECTRICAL_LEAKAGE: [OrderType.REPAIR],
+    IssueCategory.BATCH_DEFECT: [OrderType.RETURN_EXCHANGE, OrderType.QC],
+    IssueCategory.SAFETY_HAZARD: [OrderType.RETURN_EXCHANGE, OrderType.QC],
+    IssueCategory.OTHER: [OrderType.TECH_SUPPORT],
 }

@@ -112,6 +112,65 @@ async def seed_warranty_records(conn):
     print("  质保记录: 3条")
 
 
+async def seed_order_mapping_rules(conn):
+    """初始化出单映射规则数据（如果数据库中还没有的话）"""
+    # 先检查是否已有数据
+    async with conn.cursor() as cur:
+        await cur.execute("SELECT COUNT(*) FROM `order_mapping_rules`")
+        count = (await cur.fetchone())[0]
+        if count > 0:
+            print(f"  出单映射规则: 已存在{count}条，跳过插入")
+            return
+
+    rules = [
+        # Missing_Parts -> Replacement (补发单, 售后服务部)
+        ("Missing_Parts",            "Low_Priority",    "Replacement",     "售后服务部", 72, 10, "缺件-低优先级-补发单"),
+        ("Missing_Parts",            "Medium_Priority", "Replacement",     "售后服务部", 48, 20, "缺件-中优先级-补发单"),
+        ("Missing_Parts",            "High_Priority",   "Replacement",     "售后服务部", 24, 30, "缺件-高优先级-补发单"),
+        # Operation_Error -> Tech_Support (技术支援单, 技术支持部)
+        ("Operation_Error",          "Low_Priority",    "Tech_Support",   "技术支持部", 72, 10, "操作失误-低优先级-技术支援单"),
+        ("Operation_Error",          "Medium_Priority", "Tech_Support",   "技术支持部", 48, 20, "操作失误-中优先级-技术支援单"),
+        ("Operation_Error",          "High_Priority",   "Tech_Support",   "技术支持部", 24, 30, "操作失误-高优先级-技术支援单"),
+        # Software_Bug -> Tech_Support (技术支援单, 技术支持部)
+        ("Software_Bug",             "Low_Priority",    "Tech_Support",   "技术支持部", 72, 10, "软件缺陷-低优先级-技术支援单"),
+        ("Software_Bug",             "Medium_Priority", "Tech_Support",   "技术支持部", 48, 20, "软件缺陷-中优先级-技术支援单"),
+        ("Software_Bug",             "High_Priority",   "Tech_Support",   "技术支持部", 24, 30, "软件缺陷-高优先级-技术支援单"),
+        # Hardware_Malfunction -> Repair (维修单, 技术维修部)
+        ("Hardware_Malfunction",     "Low_Priority",    "Repair",         "技术维修部", 120, 10, "硬件故障-低优先级-维修单"),
+        ("Hardware_Malfunction",     "Medium_Priority", "Repair",         "技术维修部", 72,  20, "硬件故障-中优先级-维修单"),
+        ("Hardware_Malfunction",     "High_Priority",   "Repair",         "技术维修部", 24,  30, "硬件故障-高优先级-维修单"),
+        # Hardware_Thermal_Runaway -> Repair (维修单, 技术维修部)
+        ("Hardware_Thermal_Runaway", "Low_Priority",    "Repair",         "技术维修部", 72,  10, "热失控-低优先级-维修单"),
+        ("Hardware_Thermal_Runaway", "Medium_Priority",  "Repair",         "技术维修部", 24,  20, "热失控-中优先级-维修单"),
+        ("Hardware_Thermal_Runaway", "High_Priority",    "Repair",         "技术维修部", 4,   30, "热失控-高优先级-维修单"),
+        # Electrical_Leakage -> Repair (维修单, 技术维修部)
+        ("Electrical_Leakage",       "Low_Priority",    "Repair",         "技术维修部", 72,  10, "漏电-低优先级-维修单"),
+        ("Electrical_Leakage",       "Medium_Priority", "Repair",         "技术维修部", 24,  20, "漏电-中优先级-维修单"),
+        ("Electrical_Leakage",       "High_Priority",   "Repair",         "技术维修部", 4,   30, "漏电-高优先级-维修单"),
+        # Batch_Defect -> Return_Exchange (退换单, 售后服务部)
+        ("Batch_Defect",             "Medium_Priority", "Return_Exchange", "售后服务部", 48, 20, "批次缺陷-中优先级-退换单"),
+        ("Batch_Defect",             "High_Priority",   "Return_Exchange", "售后服务部", 24, 30, "批次缺陷-高优先级-退换单"),
+        # Safety_Hazard -> Return_Exchange (退换单, 售后服务部)
+        ("Safety_Hazard",            "Low_Priority",    "Return_Exchange", "售后服务部", 48, 10, "安全隐患-低优先级-退换单"),
+        ("Safety_Hazard",            "Medium_Priority", "Return_Exchange", "售后服务部", 24, 20, "安全隐患-中优先级-退换单"),
+        ("Safety_Hazard",            "High_Priority",   "Return_Exchange", "售后服务部", 4,  30, "安全隐患-高优先级-退换单"),
+        # Batch_Defect -> QC (质检单, 质量管理部)
+        ("Batch_Defect",             "Medium_Priority", "QC",              "质量管理部", 48, 15, "批次缺陷-中优先级-质检单"),
+        ("Batch_Defect",             "High_Priority",   "QC",              "质量管理部", 24, 25, "批次缺陷-高优先级-质检单"),
+        # Safety_Hazard -> QC (质检单, 质量管理部)
+        ("Safety_Hazard",            "Low_Priority",    "QC",              "质量管理部", 48, 5,  "安全隐患-低优先级-质检单"),
+        ("Safety_Hazard",            "Medium_Priority", "QC",              "质量管理部", 24, 15, "安全隐患-中优先级-质检单"),
+        ("Safety_Hazard",            "High_Priority",   "QC",              "质量管理部", 4,  25, "安全隐患-高优先级-质检单"),
+    ]
+    async with conn.cursor() as cur:
+        for issue_cat, urgency, order_type, dept, sla, priority, desc in rules:
+            await cur.execute(
+                "INSERT IGNORE INTO `order_mapping_rules` (issue_category, urgency_level, order_type, department, sla_hours, priority, description) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (issue_cat, urgency, order_type, dept, sla, priority, desc)
+            )
+    print("  出单映射规则: 27条")
+
+
 async def main():
     print("=" * 50)
     print("客诉自动回复出单智能体 - 种子数据插入")
@@ -124,24 +183,28 @@ async def main():
         db=DB_NAME, charset=DB_CHARSET
     )
 
-    print("[1/5] 插入用户数据...")
+    print("[1/6] 插入用户数据...")
     await seed_users(conn)
     await conn.commit()
 
-    print("[2/5] 插入路由规则...")
+    print("[2/6] 插入路由规则...")
     await seed_routing_rules(conn)
     await conn.commit()
 
-    print("[3/5] 插入升级规则...")
+    print("[3/6] 插入升级规则...")
     await seed_escalation_rules(conn)
     await conn.commit()
 
-    print("[4/5] 插入SOP知识库...")
+    print("[4/6] 插入SOP知识库...")
     await seed_sop_knowledge(conn)
     await conn.commit()
 
-    print("[5/5] 插入质保记录...")
+    print("[5/6] 插入质保记录...")
     await seed_warranty_records(conn)
+    await conn.commit()
+
+    print("[6/6] 插入出单映射规则...")
+    await seed_order_mapping_rules(conn)
     await conn.commit()
 
     conn.close()

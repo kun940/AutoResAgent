@@ -7,8 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
-from backend.app.models.models import Ticket, TicketLog, EvidenceFile
+from backend.app.models.models import Ticket, TicketLog, EvidenceFile, ServiceOrder
 from backend.app.schemas.common import ApiResponse
+from backend.app.schemas.order import OrderResponse
 from backend.app.services.ticket_service import TicketService
 from shared.constants import TicketStatus, UrgencyLevel, IssueCategory, TicketAction
 
@@ -122,7 +123,16 @@ async def customer_submit(
     status = result.get("status", "routed")
     category = result.get("issue_category", "Other")
 
-    return ApiResponse(data={
+    # 查询出单引擎是否已执行，获取出单结果
+    order_result = None
+    if ticket:
+        order_stmt = select(ServiceOrder).where(ServiceOrder.ticket_id == ticket.ticket_id).order_by(ServiceOrder.created_at.desc())
+        order_result_data = await db.execute(order_stmt)
+        orders = list(order_result_data.scalars().all())
+        if orders:
+            order_result = [OrderResponse.model_validate(o).model_dump() for o in orders]
+
+    response_data = {
         "ticket_id": result["ticket_id"],
         "urgency_level": urgency,
         "urgency_label": URGENCY_LABELS.get(urgency, urgency),
@@ -132,7 +142,11 @@ async def customer_submit(
         "issue_category_label": CATEGORY_LABELS.get(category, category),
         "auto_reply": result.get("auto_reply_sent", ""),
         "created_at": created_at,
-    })
+    }
+    if order_result is not None:
+        response_data["order_result"] = order_result
+
+    return ApiResponse(data=response_data)
 
 
 @router.get("/ticket/{ticket_id}", response_model=ApiResponse)
@@ -154,6 +168,12 @@ async def customer_get_ticket(
 
     timeline = _build_timeline(ticket, logs, status)
 
+    # 查询关联出单信息
+    order_stmt = select(ServiceOrder).where(ServiceOrder.ticket_id == ticket_id).order_by(ServiceOrder.created_at.desc())
+    order_result = await db.execute(order_stmt)
+    orders = list(order_result.scalars().all())
+    order_info = [OrderResponse.model_validate(o).model_dump() for o in orders] if orders else []
+
     return ApiResponse(data={
         "ticket_id": ticket.ticket_id,
         "urgency_level": urgency,
@@ -166,6 +186,7 @@ async def customer_get_ticket(
         "created_at": ticket.created_at.isoformat() if ticket.created_at else None,
         "resolved_at": ticket.resolved_at.isoformat() if ticket.resolved_at else None,
         "timeline": timeline,
+        "order_info": order_info,
     })
 
 

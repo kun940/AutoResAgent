@@ -8,6 +8,7 @@ from agent.core.extractor import ExtractionAgent
 from agent.core.assessor import AssessmentAgent
 from agent.core.responder import ResponderAgent
 from agent.core.router import RoutingAgent
+from agent.core.order_engine import OrderEngine
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ class ComplaintAgentEngine:
         self.assessor = AssessmentAgent()
         self.responder = ResponderAgent()
         self.router = RoutingAgent()
+        self.order_engine = OrderEngine()
         self._sop_indexed = False
 
     async def _ensure_sop_index(self):
@@ -91,6 +93,9 @@ class ComplaintAgentEngine:
         except Exception as e:
             logger.error(f"Routing failed: {e}")
             routing_decision = "department_manager_queue"
+
+        # Step5: 出单决策（延迟到工单入库后执行，由 ticket_service 调用）
+        # order_result 由 ticket_service.submit_complaint 在 flush 后调用
 
         result = {
             "ticket_id": ticket_id,
