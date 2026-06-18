@@ -65,18 +65,6 @@ ROLE_OPTIONS = {
     "管理员": "admin",
 }
 
-ORDER_STATUS_LABELS = {
-    "none": "未出单",
-    "pending_manual": "待补单",
-    "ordered": "已出单",
-}
-
-ORDER_STATUS_COLORS = {
-    "none": ("#F2F3F4", "#7F8C8D"),
-    "pending_manual": ("#FFF3CD", "#856404"),
-    "ordered": ("#D5F5E3", "#1E8449"),
-}
-
 
 class LoadTicketsThread(QThread):
     finished = pyqtSignal(object)
@@ -234,21 +222,6 @@ class StatusBadge(QLabel):
         super().__init__(parent)
         bg, fg = STATUS_COLORS.get(status, ("#F2F3F4", "#7F8C8D"))
         label = STATUS_LABELS.get(status, status or "未知")
-        self.setText(f"  {label}  ")
-        self.setStyleSheet(
-            f"background-color: {bg}; color: {fg}; "
-            f"border-radius: 10px; padding: 4px 12px; font-weight: bold; font-size: 12px;"
-        )
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setFixedHeight(26)
-
-
-class OrderStatusBadge(QLabel):
-    """出单状态标签"""
-    def __init__(self, order_status, parent=None):
-        super().__init__(parent)
-        bg, fg = ORDER_STATUS_COLORS.get(order_status, ("#F2F3F4", "#7F8C8D"))
-        label = ORDER_STATUS_LABELS.get(order_status, order_status or "未知")
         self.setText(f"  {label}  ")
         self.setStyleSheet(
             f"background-color: {bg}; color: {fg}; "
@@ -600,9 +573,9 @@ class TicketListView(QWidget):
         content_layout.setSpacing(16)
 
         self.table = QTableWidget()
-        self.table.setColumnCount(7)
-        self.table.setHorizontalHeaderLabels(["工单编号", "客户", "紧急度", "状态", "出单状态", "问题分类", "创建时间"])
-        self.table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels(["工单编号", "客户", "紧急度", "状态", "问题分类", "创建时间"])
+        self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self.table.setColumnWidth(0, 160)
         self.table.setColumnWidth(1, 80)
@@ -849,21 +822,16 @@ class TicketListView(QWidget):
             status_badge = StatusBadge(status)
             self.table.setCellWidget(row, 3, status_badge)
 
-            # 出单状态列
-            order_status = ticket.get("order_status", "none") or "none"
-            order_badge = OrderStatusBadge(order_status)
-            self.table.setCellWidget(row, 4, order_badge)
-
             category = ticket.get("issue_category", "")
             cat_text = CATEGORY_MAP.get(category, category or "-")
             item_cat = QTableWidgetItem(cat_text)
-            self.table.setItem(row, 5, item_cat)
+            self.table.setItem(row, 4, item_cat)
 
             created = ticket.get("created_at", "-")
             if created and len(created) >= 16:
                 created = created[:16].replace("T", " ")
             item_time = QTableWidgetItem(created)
-            self.table.setItem(row, 6, item_time)
+            self.table.setItem(row, 5, item_time)
 
         self.table.setRowHeight(0, 36)
         for row in range(self.table.rowCount()):

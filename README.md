@@ -1,10 +1,10 @@
-# AutoRes Agent — 客诉自动回复出单智能体
+# AutoRes Agent — 客诉自动回复与质量追溯系统
 
-基于大模型 Agent 的客户投诉自动回复、智能定级与工单分发系统。
+基于大模型 Agent 的客户投诉自动回复、智能定级、工单归档与质量追溯系统。
 
 ## 项目简介
 
-本系统采用 C/S 架构，通过 4 步 Agent Pipeline（字段提取 → 业务定级 → RAG排障回复 → 路由分发）实现客诉的自动化处理。客户通过 H5 页面提交投诉后，系统自动完成结构化字段提取、紧急度定级、专业排障回复生成和工单路由分发，同时支持三级降级策略确保服务可用性。
+本系统采用 C/S 架构，通过 4 步 Agent Pipeline（字段提取 → 业务定级 → RAG排障回复 → 路由分发）实现客诉的自动化处理。客户通过 H5 页面提交投诉后，系统自动完成结构化字段提取、紧急度定级、专业排障回复生成和工单路由分发，同时支持三级降级策略确保服务可用性。所有工单统一完整归档，留存全量客诉证据、Agent 研判记录与自动回复内容，支撑客户侧 H5 进度查询与企业生产侧质量追溯分析。
 
 ## 系统架构
 
@@ -35,8 +35,10 @@
 
 - **Agent Pipeline 四步自动化处理**：Extractor（字段提取）→ Assessor（业务定级）→ Responder（RAG排障回复）→ Router（路由分发）
 - **三级降级策略**：L0 正常（AI完整处理）→ L1 备选（关键词匹配+模板回复）→ L2 兜底（通用模板+标记人工）
-- **企业桌面端**：登录/注册、主看板、客诉提交、工单列表（含证据图片查看/状态变更/升级/转派）、系统设置
-- **客户 H5 页面**：客诉提交（支持图片上传）、AI回复结果页、工单进度查询
+- **工单完整归档**：全量留存客诉原文、Agent 提取结果、研判记录、自动回复内容、证据文件，归档完整性自动校验
+- **客户 H5 进度查询**：客户通过 H5 页面随时查询工单处理进度（脱敏展示）
+- **企业生产侧质量追溯**：按产品型号/批次/问题分类批量追溯，反向优化生产质检流程
+- **企业桌面端**：登录/注册、主看板、客诉提交、工单列表（含证据图片查看/状态变更/升级/转派）、质量分析、系统设置
 - **数据隔离**：客户侧脱敏展示，企业侧全量数据，JWT 认证保护
 - **RAG 知识库**：ChromaDB 向量检索 + SOP 知识库，生成专业排障指导
 - **工单生命周期**：pending → processing → routed → resolved → closed，支持 SLA 超时自动升级
@@ -61,9 +63,10 @@
 AutoRes Agent/
 ├── backend/                    # 后端服务
 │   └── app/
-│       ├── api/                # 7个API路由模块
+│       ├── api/                # API路由模块
 │       │   ├── tickets.py      # 工单管理（提交/列表/详情/状态变更/升级/转派）
 │       │   ├── customer.py     # 客户侧API（提交+查询，数据脱敏）
+│       │   ├── quality.py      # 质量追溯（追溯查询/看板/导出）
 │       │   ├── dashboard.py    # 看板统计
 │       │   ├── auth.py         # JWT认证（登录+注册）
 │       │   ├── knowledge.py    # SOP知识库CRUD
@@ -71,7 +74,7 @@ AutoRes Agent/
 │       │   └── upload.py       # 文件上传
 │       ├── core/               # 配置、数据库连接
 │       ├── middleware/          # JWT认证中间件
-│       ├── models/             # SQLAlchemy ORM 模型（9张表）
+│       ├── models/             # SQLAlchemy ORM 模型（10张表）
 │       ├── schemas/            # Pydantic 数据模型
 │       ├── services/           # 业务逻辑层
 │       ├── static/
@@ -99,6 +102,7 @@ AutoRes Agent/
 │   │   ├── dashboard_view.py   # 主看板
 │   │   ├── submit_complaint_view.py # 提交客诉
 │   │   ├── ticket_list_view.py # 工单列表（含图片查看/操作按钮）
+│   │   ├── quality_analysis_view.py # 质量分析（追溯看板/报表导出）
 │   │   └── settings_view.py    # 系统设置
 │   ├── api_client.py           # HTTP API客户端
 │   ├── resources/styles/       # QSS样式
@@ -108,13 +112,16 @@ AutoRes Agent/
 │   ├── logger.py               # 日志工具
 │   └── utils.py                # 通用工具
 ├── scripts/                    # 工具脚本
-│   ├── init_db.py              # 数据库初始化（建9张表）
+│   ├── init_db.py              # 数据库初始化（建9张基础表）
+│   ├── migration_v1.1.sql      # v1.1迁移脚本（出单+质量追溯表）
+│   ├── migration_v1.2.sql      # v1.2迁移脚本（删除出单表，改造追溯表）
 │   ├── seed_data.py            # 种子数据（用户/路由规则/SOP）
 │   ├── build_chroma_index.py   # 构建ChromaDB索引
 │   └── download_model.py       # 下载嵌入模型
 ├── tests/                      # 测试
 │   ├── test_agent/             # Agent验收测试（4场景）
-│   └── test_backend/           # 后端接口测试
+│   ├── test_v1.1/              # v1.1/v1.2 接口与服务测试
+│   └── test_v1.2/              # v1.2 归档与追溯测试
 ├── config/                     # 配置
 │   ├── .env                    # 环境变量（不入Git）
 │   └── .env.example            # 配置模板
@@ -235,6 +242,9 @@ python desktop/main.py
 | POST | /api/v1/tickets/{id}/escalate | 升级工单紧急度 |
 | POST | /api/v1/tickets/{id}/reassign | 转派工单（按角色+用户名） |
 | GET | /api/v1/dashboard/stats | 看板统计数据 |
+| GET | /api/v1/quality/trace | 质量追溯查询（按型号/批次/分类分组） |
+| GET | /api/v1/quality/dashboard | 质量看板（概览/趋势/TOP5/分布） |
+| GET | /api/v1/quality/export | 质量报表导出（CSV/XLSX） |
 | GET | /api/v1/notifications | 通知列表 |
 | GET | /api/v1/knowledge | SOP知识库列表 |
 
@@ -273,19 +283,20 @@ pending → processing → routed → resolved → closed
 
 ## 数据库表结构
 
-共 9 张表：
+共 10 张表（v1.2）：
 
 | 表名 | 说明 |
 |------|------|
-| users | 系统用户（管理员/前线/部门经理/总经理） |
-| tickets | 工单主表 |
+| users | 系统用户（管理员/前线/部门经理/总经理/质检） |
+| tickets | 工单主表（归档核心：客诉原文/提取结果/研判记录/自动回复） |
 | evidence_files | 证据文件（图片/视频/文档） |
-| ticket_timelines | 工单时间线 |
+| ticket_logs | 工单操作日志 |
 | routing_rules | 路由规则 |
 | escalation_rules | 升级规则 |
-| sop_knowledge | SOP知识库 |
+| sop_knowledge_base | SOP知识库 |
 | warranty_records | 质保记录 |
 | notifications | 通知 |
+| quality_trace_index | 质量追溯索引（v1.2: 解除去单外键，新增归档完整性字段） |
 
 ## 数据隔离策略
 
@@ -341,6 +352,16 @@ AI Pipeline 需要多次调用大模型，总耗时可能超过60秒。确保 `a
 
 **Q: 自动回复包含大模型思考过程？**
 QwQ-32B 和 DeepSeek-V3 均为推理模型，输出包含 `<think.../think>` 标签的思考过程。`responder.py` 的 `_parse_response` 方法已自动剥离思考标签，只返回纯净回复。
+
+## 版本历史
+
+| 版本 | 日期 | 主要变更 |
+|------|------|---------|
+| v1.0 | 2026-06 | 初始版本：4步Agent Pipeline、H5客诉提交、桌面端工单管理 |
+| v1.1 | 2026-06 | 新增出单管理（5步Pipeline）、质量追溯、批量操作、升级转派 |
+| v1.2 | 2026-06 | 删除出单模块，强化工单完整归档与质量追溯；Pipeline恢复4步；新增归档完整性校验；客户侧H5进度查询；企业生产侧批次/型号质量追溯 |
+
+> v1.2 详细设计文档见 `docs/` 目录：PRD、架构设计文档、更新设计文档。
 
 ## License
 

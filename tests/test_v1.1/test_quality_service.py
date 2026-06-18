@@ -164,7 +164,7 @@ class TestQualityServiceIntegration:
         assert "groups" in result
         assert "total_records" in result["summary"]
         assert "total_tickets" in result["summary"]
-        assert "total_orders" in result["summary"]
+        assert "total_archived" in result["summary"]
         assert isinstance(result["groups"], list)
 
     @pytest.mark.asyncio
@@ -183,9 +183,9 @@ class TestQualityServiceIntegration:
         for group in result["groups"]:
             assert "dimension" in group
             assert "ticket_count" in group
-            assert "order_count" in group
+            assert "archived_count" in group
             assert "category_distribution" in group
-            assert "order_type_distribution" in group
+            assert "action_type_distribution" in group
             assert "urgency_distribution" in group
             assert "high_priority_count" in group
 
@@ -198,18 +198,18 @@ class TestQualityServiceIntegration:
         assert "trend" in result
         assert "top_models" in result
         assert "category_distribution" in result
-        assert "order_type_distribution" in result
+        assert "action_type_distribution" in result
 
         overview = result["overview"]
         assert "total_tickets" in overview
-        assert "total_orders" in overview
+        assert "total_archived" in overview
         assert "high_urgency_rate" in overview
-        assert "sla_rate" in overview
+        assert "archive_complete_rate" in overview
 
         trend = result["trend"]
         assert "dates" in trend
         assert "ticket_counts" in trend
-        assert "order_counts" in trend
+        assert "archived_counts" in trend
 
     @pytest.mark.asyncio
     async def test_export_report_csv(self, service, db_session):

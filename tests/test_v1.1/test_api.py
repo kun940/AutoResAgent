@@ -1,6 +1,7 @@
-"""v1.1 API 端点集成测试
+"""v1.2 API 端点集成测试
 
 通过 HTTP 请求验证完整的 API 链路，需要后端服务运行中。
+v1.2: 出单管理 API 已删除，质量追溯字段已更新。
 """
 import pytest
 
@@ -42,141 +43,6 @@ pytestmark = pytest.mark.skipif(
 
 
 # ============================================================
-# 出单管理 API 测试
-# ============================================================
-
-class TestOrdersAPI:
-    """出单管理API测试"""
-
-    def test_list_orders(self, headers):
-        """GET /api/v1/orders - 出单列表"""
-        r = requests.get(f"{BASE_URL}/api/v1/orders", headers=headers, timeout=10)
-        assert r.status_code == 200
-        data = r.json()
-        assert "data" in data
-        assert "total" in data
-
-    def test_list_orders_with_filters(self, headers):
-        """GET /api/v1/orders?type=Replacement - 按类型筛选"""
-        r = requests.get(
-            f"{BASE_URL}/api/v1/orders",
-            headers=headers,
-            params={"order_type": "Replacement"},
-            timeout=10,
-        )
-        assert r.status_code == 200
-        data = r.json()
-        for order in data.get("data", []):
-            assert order["order_type"] == "Replacement"
-
-    def test_list_orders_pagination(self, headers):
-        """GET /api/v1/orders?page=1&page_size=5 - 分页"""
-        r = requests.get(
-            f"{BASE_URL}/api/v1/orders",
-            headers=headers,
-            params={"page": 1, "page_size": 5},
-            timeout=10,
-        )
-        assert r.status_code == 200
-        data = r.json()
-        assert len(data.get("data", [])) <= 5
-
-    def test_get_order_not_found(self, headers):
-        """GET /api/v1/orders/99999 - 不存在的出单"""
-        r = requests.get(f"{BASE_URL}/api/v1/orders/99999", headers=headers, timeout=10)
-        assert r.status_code == 200
-        assert r.json().get("data") is None
-
-    def test_get_mapping_rules(self, headers):
-        """GET /api/v1/orders/mapping-rules - 映射规则列表"""
-        r = requests.get(f"{BASE_URL}/api/v1/orders/mapping-rules", headers=headers, timeout=10)
-        assert r.status_code == 200
-        data = r.json()
-        assert len(data.get("data", [])) > 0
-
-    def test_get_mapping_rules_active_only(self, headers):
-        """GET /api/v1/orders/mapping-rules?is_active=1 - 只查激活规则"""
-        r = requests.get(
-            f"{BASE_URL}/api/v1/orders/mapping-rules",
-            headers=headers,
-            params={"is_active": 1},
-            timeout=10,
-        )
-        assert r.status_code == 200
-        data = r.json()
-        for rule in data.get("data", []):
-            assert rule["is_active"] == 1
-
-    def test_create_and_delete_mapping_rule(self, headers):
-        """POST + DELETE /api/v1/orders/mapping-rules - 创建和删除映射规则"""
-        r = requests.post(
-            f"{BASE_URL}/api/v1/orders/mapping-rules",
-            headers=headers,
-            json={
-                "issue_category": "Test_Category",
-                "urgency_level": "Low_Priority",
-                "order_type": "Tech_Support",
-                "department": "技术支持部",
-                "sla_hours": 72,
-                "priority": 0,
-                "description": "测试规则",
-            },
-            timeout=10,
-        )
-        assert r.status_code == 200, f"创建失败: {r.text}"
-        rule_id = r.json()["data"]["id"]
-
-        r = requests.delete(
-            f"{BASE_URL}/api/v1/orders/mapping-rules/{rule_id}",
-            headers=headers,
-            timeout=10,
-        )
-        assert r.status_code == 200
-        assert r.json()["data"]["is_active"] == 0
-
-    def test_update_mapping_rule(self, headers):
-        """PUT /api/v1/orders/mapping-rules/{id} - 更新映射规则"""
-        r = requests.post(
-            f"{BASE_URL}/api/v1/orders/mapping-rules",
-            headers=headers,
-            json={
-                "issue_category": "Test_Update_Category",
-                "urgency_level": "Medium_Priority",
-                "order_type": "Repair",
-                "department": "技术维修部",
-                "sla_hours": 48,
-            },
-            timeout=10,
-        )
-        rule_id = r.json()["data"]["id"]
-
-        r = requests.put(
-            f"{BASE_URL}/api/v1/orders/mapping-rules/{rule_id}",
-            headers=headers,
-            json={"sla_hours": 96, "description": "更新后的规则"},
-            timeout=10,
-        )
-        assert r.status_code == 200
-        assert r.json()["data"]["sla_hours"] == 96
-        assert r.json()["data"]["description"] == "更新后的规则"
-
-        requests.delete(f"{BASE_URL}/api/v1/orders/mapping-rules/{rule_id}", headers=headers, timeout=10)
-
-    def test_get_orders_by_ticket(self, headers):
-        """GET /api/v1/orders/by-ticket/{ticket_id} - 按工单查出单"""
-        r = requests.get(f"{BASE_URL}/api/v1/orders", headers=headers, timeout=10)
-        if r.json().get("data"):
-            ticket_id = r.json()["data"][0]["ticket_id"]
-            r = requests.get(
-                f"{BASE_URL}/api/v1/orders/by-ticket/{ticket_id}",
-                headers=headers,
-                timeout=10,
-            )
-            assert r.status_code == 200
-            assert isinstance(r.json().get("data", []), list)
-
-
-# ============================================================
 # 质量追溯 API 测试
 # ============================================================
 
@@ -205,7 +71,7 @@ class TestQualityAPI:
         for g in groups:
             assert "dimension" in g
             assert "ticket_count" in g
-            assert "order_count" in g
+            assert "archived_count" in g
 
     def test_quality_trace_group_by_category(self, headers):
         """GET /api/v1/quality/trace?group_by=category - 按分类分组"""
@@ -226,15 +92,15 @@ class TestQualityAPI:
         assert "trend" in data
         assert "top_models" in data
         assert "category_distribution" in data
-        assert "order_type_distribution" in data
+        assert "action_type_distribution" in data
 
         overview = data["overview"]
         assert "total_tickets" in overview
-        assert "total_orders" in overview
+        assert "total_archived" in overview
         assert "high_urgency_rate" in overview
-        assert "sla_rate" in overview
+        assert "archive_complete_rate" in overview
         assert 0 <= overview["high_urgency_rate"] <= 100
-        assert 0 <= overview["sla_rate"] <= 100
+        assert 0 <= overview["archive_complete_rate"] <= 100
 
     def test_quality_export_csv(self, headers):
         """GET /api/v1/quality/export?format=csv - CSV导出"""
@@ -330,14 +196,14 @@ class TestTicketEnhancedAPI:
 
 
 # ============================================================
-# 客诉提交+自动出单 集成测试
+# 客诉提交+工单归档 集成测试
 # ============================================================
 
-class TestComplaintSubmitWithOrder:
-    """客诉提交+自动出单集成测试"""
+class TestComplaintSubmitWithArchive:
+    """客诉提交+工单归档集成测试（v1.2: 出单已移除，验证归档完整性）"""
 
-    def test_submit_complaint_triggers_order(self, headers):
-        """提交客诉后应自动触发出单"""
+    def test_submit_complaint_archives_ticket(self, headers):
+        """提交客诉后应生成工单并完整归档"""
         r = requests.post(
             f"{BASE_URL}/api/v1/customer/submit",
             data={
@@ -353,25 +219,12 @@ class TestComplaintSubmitWithOrder:
         assert data.get("ticket_id"), "应生成工单ID"
         assert data.get("issue_category"), "应有问题分类"
         assert data.get("urgency_level"), "应有紧急度"
+        assert data.get("auto_reply"), "应有自动回复内容"
+        # v1.2: 不再返回 order_result
+        assert "order_result" not in data, "v1.2 不应返回出单结果"
 
-        order_result = data.get("order_result")
-        if order_result:
-            if isinstance(order_result, list):
-                orders = order_result
-            elif isinstance(order_result, dict):
-                orders = order_result.get("orders", [])
-            else:
-                orders = []
-
-            if orders:
-                order = orders[0]
-                assert order.get("order_no"), "单据应有编号"
-                assert order.get("order_type"), "单据应有类型"
-                assert order.get("department"), "单据应有处理部门"
-                assert order.get("sla_hours"), "单据应有SLA时限"
-
-    def test_submit_safety_hazard_triggers_dual_orders(self, headers):
-        """安全隐患投诉应触发退换单+质检单"""
+    def test_submit_safety_hazard_archived(self, headers):
+        """安全隐患投诉应归档工单（v1.2: 不再触发出单）"""
         r = requests.post(
             f"{BASE_URL}/api/v1/customer/submit",
             data={
@@ -383,11 +236,5 @@ class TestComplaintSubmitWithOrder:
         )
         assert r.status_code == 200
         data = r.json().get("data", {})
-        order_result = data.get("order_result")
-
-        if order_result and isinstance(order_result, dict):
-            orders = order_result.get("orders", [])
-            if orders:
-                order_types = [o.get("order_type") for o in orders]
-                assert "Return_Exchange" in order_types or "QC" in order_types, \
-                    f"安全隐患应触发退换单或质检单, 实际: {order_types}"
+        assert data.get("ticket_id"), "应生成工单ID"
+        assert "order_result" not in data, "v1.2 不应返回出单结果"

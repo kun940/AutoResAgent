@@ -6,8 +6,8 @@ from typing import Optional
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.models.models import Ticket, TicketLog, Notification, RoutingRule, User
-from shared.constants import TicketStatus, TICKET_STATUS_TRANSITIONS, NotificationType, TicketAction
+from backend.app.models.models import Ticket, TicketLog, Notification, RoutingRule, User, QualityTraceIndex
+from shared.constants import TicketStatus, TICKET_STATUS_TRANSITIONS, NotificationType, TicketAction, ActionType
 
 logger = logging.getLogger(__name__)
 
@@ -112,21 +112,26 @@ class TicketService:
         db.add(log)
         await db.flush()
 
-        # Step5: 出单决策 - 工单入库后自动出单
-        try:
-            from agent.core.order_engine import OrderEngine
-            order_engine = OrderEngine()
-            order_result = await order_engine.decide_and_create(
-                ticket_id=result["ticket_id"],
-                issue_category=result.get("issue_category", "Other"),
-                urgency_level=result.get("urgency_level", "Medium_Priority"),
-                extracted_data=result.get("extracted_data", {}),
-                db=db,
-            )
-            result["order_result"] = order_result
-        except Exception as e:
-            logger.error(f"Order engine failed: {e}")
-            result["order_result"] = None
+        # v1.2: 工单入库后写入质量追溯索引（归档）
+        extracted = result.get("extracted_data", {}) or {}
+        archive_complete = all([
+            result.get("raw_input"),
+            result.get("extracted_data"),
+            result.get("agent_business_assessment"),
+            result.get("auto_reply_sent"),
+        ])
+        trace_index = QualityTraceIndex(
+            ticket_id=result["ticket_id"],
+            model_number=extracted.get("model_number"),
+            batch_code=extracted.get("batch_code"),
+            issue_category=result.get("issue_category"),
+            urgency_level=result.get("urgency_level"),
+            order_type=ActionType.AUTO_REPLY.value,
+            warranty_status=result.get("warranty_status"),
+            trace_date=datetime.now().date(),
+            archive_complete=1 if archive_complete else 0,
+        )
+        db.add(trace_index)
 
         return result
 
@@ -194,6 +199,19 @@ class TicketService:
             detail=f"状态变更：{current_status.value} → {new_status.value}" + (f"，备注：{note}" if note else ""),
         )
         db.add(log)
+
+        # v1.2: 同步更新质量追溯索引的处理动作与解决天数
+        trace_stmt = select(QualityTraceIndex).where(QualityTraceIndex.ticket_id == ticket_id).order_by(QualityTraceIndex.created_at.desc()).limit(1)
+        trace_result = await db.execute(trace_stmt)
+        trace = trace_result.scalar_one_or_none()
+        if trace:
+            if new_status == TicketStatus.RESOLVED:
+                trace.order_type = ActionType.MANUAL_RESOLVED.value
+                if ticket.created_at:
+                    trace.resolution_days = round((datetime.now() - ticket.created_at).total_seconds() / 86400, 2)
+            elif new_status == TicketStatus.CLOSED:
+                trace.order_type = ActionType.MANUAL_RESOLVED.value
+
         await db.flush()
         return ticket
 

@@ -39,13 +39,12 @@ CATEGORY_LABELS = {
     "Other": "其他",
 }
 
-# 出单类型标签映射
-ORDER_TYPE_LABELS = {
-    "Replacement": "补发单",
-    "Repair": "维修单",
-    "Return_Exchange": "退换单",
-    "Tech_Support": "技术支援单",
-    "QC": "质检单",
+# 处理动作类型标签映射（v1.2: 原出单类型分布）
+ACTION_TYPE_LABELS = {
+    "Auto_Reply": "自动回复",
+    "Routed": "已路由",
+    "Manual_Resolved": "人工解决",
+    "Escalated": "已升级",
 }
 
 
@@ -212,14 +211,14 @@ class QualityAnalysisView(QWidget):
         cards_layout.setSpacing(16)
 
         self.card_total_tickets = StatCard("📋", "投诉总量", "0", "#2C3E50")
-        self.card_total_orders = StatCard("📦", "出单总量", "0", "#3498DB")
+        self.card_total_archived = StatCard("📦", "归档总量", "0", "#3498DB")
         self.card_high_urgency = StatCard("🔥", "高紧急率", "0%", "#FF4444")
-        self.card_sla_rate = StatCard("✅", "SLA达标率", "0%", "#4CAF50")
+        self.card_archive_rate = StatCard("✅", "归档完整率", "0%", "#4CAF50")
 
         cards_layout.addWidget(self.card_total_tickets)
-        cards_layout.addWidget(self.card_total_orders)
+        cards_layout.addWidget(self.card_total_archived)
         cards_layout.addWidget(self.card_high_urgency)
-        cards_layout.addWidget(self.card_sla_rate)
+        cards_layout.addWidget(self.card_archive_rate)
         main_layout.addLayout(cards_layout)
 
         # 图表区域
@@ -264,12 +263,12 @@ class QualityAnalysisView(QWidget):
         trend_layout.addWidget(self.trend_canvas)
         charts_top.addWidget(trend_group)
 
-        # 出单类型分布饼图
-        order_type_group = QGroupBox("出单类型分布")
-        order_type_layout = QVBoxLayout(order_type_group)
+        # 处理动作分布饼图（v1.2: 原出单类型分布）
+        action_type_group = QGroupBox("处理动作分布")
+        action_type_layout = QVBoxLayout(action_type_group)
         self.order_type_canvas = ChartCanvas(self, width=5, height=3)
-        order_type_layout.addWidget(self.order_type_canvas)
-        charts_top.addWidget(order_type_group)
+        action_type_layout.addWidget(self.order_type_canvas)
+        charts_top.addWidget(action_type_group)
 
         main_layout.addLayout(charts_top, 3)
 
@@ -309,17 +308,17 @@ class QualityAnalysisView(QWidget):
         trend_layout.addWidget(self.trend_table)
         tables_top.addWidget(trend_group)
 
-        # 出单类型分布表
-        order_type_group = QGroupBox("出单类型分布")
-        order_type_layout = QVBoxLayout(order_type_group)
+        # 处理动作分布表（v1.2: 原出单类型分布）
+        action_type_group = QGroupBox("处理动作分布")
+        action_type_layout = QVBoxLayout(action_type_group)
         self.order_type_table = QTableWidget()
         self.order_type_table.setColumnCount(2)
-        self.order_type_table.setHorizontalHeaderLabels(["出单类型", "数量"])
+        self.order_type_table.setHorizontalHeaderLabels(["处理动作", "数量"])
         self.order_type_table.horizontalHeader().setStretchLastSection(True)
         self.order_type_table.verticalHeader().setVisible(False)
         self.order_type_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        order_type_layout.addWidget(self.order_type_table)
-        tables_top.addWidget(order_type_group)
+        action_type_layout.addWidget(self.order_type_table)
+        tables_top.addWidget(action_type_group)
 
         main_layout.addLayout(tables_top, 3)
 
@@ -413,9 +412,9 @@ class QualityAnalysisView(QWidget):
 
         if result is None:
             self.card_total_tickets.set_value("N/A")
-            self.card_total_orders.set_value("N/A")
+            self.card_total_archived.set_value("N/A")
             self.card_high_urgency.set_value("N/A")
-            self.card_sla_rate.set_value("N/A")
+            self.card_archive_rate.set_value("N/A")
             return
 
         data = result.get("data", {}) if isinstance(result, dict) else {}
@@ -425,29 +424,29 @@ class QualityAnalysisView(QWidget):
         # 更新统计卡片
         overview = data.get("overview", {})
         total_tickets = overview.get("total_tickets", 0)
-        total_orders = overview.get("total_orders", 0)
+        total_archived = overview.get("total_archived", 0)
         high_urgency_rate = overview.get("high_urgency_rate", 0)
-        sla_rate = overview.get("sla_rate", 0)
+        archive_complete_rate = overview.get("archive_complete_rate", 0)
 
         self.card_total_tickets.set_value(str(total_tickets))
-        self.card_total_orders.set_value(str(total_orders))
+        self.card_total_archived.set_value(str(total_archived))
         self.card_high_urgency.set_value(f"{high_urgency_rate}%")
-        self.card_sla_rate.set_value(f"{sla_rate}%")
+        self.card_archive_rate.set_value(f"{archive_complete_rate}%")
 
         # 更新图表
         trend = data.get("trend", {})
         top_models = data.get("top_models", [])
         category_distribution = data.get("category_distribution", {})
-        order_type_distribution = data.get("order_type_distribution", {})
+        action_type_distribution = data.get("action_type_distribution", {})
 
         if HAS_MATPLOTLIB:
             self._update_trend_chart(trend)
-            self._update_order_type_chart(order_type_distribution)
+            self._update_order_type_chart(action_type_distribution)
             self._update_model_chart(top_models)
             self._update_category_chart(category_distribution)
         else:
             self._update_trend_table(trend)
-            self._update_order_type_table(order_type_distribution)
+            self._update_order_type_table(action_type_distribution)
             self._update_model_table(top_models)
             self._update_category_table(category_distribution)
 
@@ -479,7 +478,7 @@ class QualityAnalysisView(QWidget):
         self.trend_canvas.draw()
 
     def _update_order_type_chart(self, distribution):
-        """更新出单类型分布饼图"""
+        """更新处理动作分布饼图（v1.2: 原出单类型分布）"""
         self.order_type_canvas.fig.clear()
         ax = self.order_type_canvas.fig.add_subplot(111)
 
@@ -488,7 +487,7 @@ class QualityAnalysisView(QWidget):
             ax.set_xticks([])
             ax.set_yticks([])
         else:
-            labels = [ORDER_TYPE_LABELS.get(k, k) for k in distribution.keys()]
+            labels = [ACTION_TYPE_LABELS.get(k, k) for k in distribution.keys()]
             values = list(distribution.values())
             colors = ["#3498DB", "#2ECC71", "#E74C3C", "#F39C12", "#9B59B6"]
             ax.pie(values, labels=labels, autopct="%1.1f%%", colors=colors[:len(values)],
@@ -547,10 +546,10 @@ class QualityAnalysisView(QWidget):
             self.trend_table.setItem(row, 1, QTableWidgetItem(str(count)))
 
     def _update_order_type_table(self, distribution):
-        """更新出单类型分布表格"""
+        """更新处理动作分布表格（v1.2: 原出单类型分布）"""
         self.order_type_table.setRowCount(len(distribution))
         for row, (key, count) in enumerate(distribution.items()):
-            label = ORDER_TYPE_LABELS.get(key, key)
+            label = ACTION_TYPE_LABELS.get(key, key)
             self.order_type_table.setItem(row, 0, QTableWidgetItem(label))
             self.order_type_table.setItem(row, 1, QTableWidgetItem(str(count)))
 

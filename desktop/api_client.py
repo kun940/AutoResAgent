@@ -10,6 +10,12 @@ class ApiClient:
         self.token = None
         self.user_info = None
 
+    def _auth_headers(self):
+        """返回带认证token的请求头"""
+        if self.token:
+            return {"Authorization": f"Bearer {self.token}"}
+        return {}
+
     def submit_complaint(self, text, image_paths=None, customer_name=None, customer_phone=None):
         try:
             url = f"{self.base_url}/complaints/submit"
@@ -25,7 +31,7 @@ class ApiClient:
                         filename = os.path.basename(path)
                         files.append(("images", (filename, open(path, "rb"), "application/octet-stream")))
             try:
-                resp = requests.post(url, data=data, files=files, timeout=120)
+                resp = requests.post(url, data=data, files=files, headers=self._auth_headers(), timeout=120)
                 resp.raise_for_status()
                 return resp.json()
             finally:
@@ -44,7 +50,7 @@ class ApiClient:
                 params["urgency_level"] = urgency_level
             if target_role:
                 params["target_role"] = target_role
-            resp = requests.get(url, params=params, timeout=self.timeout)
+            resp = requests.get(url, params=params, headers=self._auth_headers(), timeout=self.timeout)
             resp.raise_for_status()
             return resp.json()
         except Exception:
@@ -53,7 +59,7 @@ class ApiClient:
     def get_ticket(self, ticket_id):
         try:
             url = f"{self.base_url}/tickets/{ticket_id}"
-            resp = requests.get(url, timeout=self.timeout)
+            resp = requests.get(url, headers=self._auth_headers(), timeout=self.timeout)
             resp.raise_for_status()
             return resp.json()
         except Exception:
@@ -65,7 +71,7 @@ class ApiClient:
             payload = {"status": status}
             if note:
                 payload["note"] = note
-            resp = requests.put(url, json=payload, timeout=self.timeout)
+            resp = requests.put(url, json=payload, headers=self._auth_headers(), timeout=self.timeout)
             resp.raise_for_status()
             return resp.json()
         except Exception:
@@ -75,7 +81,7 @@ class ApiClient:
         try:
             url = f"{self.base_url}/tickets/{ticket_id}/escalate"
             payload = {"to_level": to_level, "reason": reason}
-            resp = requests.post(url, json=payload, timeout=self.timeout)
+            resp = requests.post(url, json=payload, headers=self._auth_headers(), timeout=self.timeout)
             resp.raise_for_status()
             return resp.json()
         except Exception:
@@ -85,7 +91,7 @@ class ApiClient:
         try:
             url = f"{self.base_url}/tickets/{ticket_id}/reassign"
             payload = {"target_username": target_username, "target_role": target_role, "reason": reason}
-            resp = requests.post(url, json=payload, timeout=self.timeout)
+            resp = requests.post(url, json=payload, headers=self._auth_headers(), timeout=self.timeout)
             resp.raise_for_status()
             return resp.json()
         except Exception:
@@ -97,7 +103,7 @@ class ApiClient:
             params = {}
             if target_role:
                 params["target_role"] = target_role
-            resp = requests.get(url, params=params, timeout=self.timeout)
+            resp = requests.get(url, params=params, headers=self._auth_headers(), timeout=self.timeout)
             resp.raise_for_status()
             return resp.json()
         except Exception:
@@ -107,7 +113,7 @@ class ApiClient:
         try:
             url = f"{self.base_url}/dashboard/subordinate-overview"
             params = {"role": role}
-            resp = requests.get(url, params=params, timeout=self.timeout)
+            resp = requests.get(url, params=params, headers=self._auth_headers(), timeout=self.timeout)
             resp.raise_for_status()
             return resp.json()
         except Exception:
@@ -116,7 +122,7 @@ class ApiClient:
     def get_unread_notification_count(self):
         try:
             url = f"{self.base_url}/notifications/unread-count"
-            resp = requests.get(url, timeout=self.timeout)
+            resp = requests.get(url, headers=self._auth_headers(), timeout=self.timeout)
             resp.raise_for_status()
             return resp.json()
         except Exception:
@@ -134,20 +140,20 @@ class ApiClient:
         try:
             url = f"{self.base_url}/auth/login"
             payload = {"username": username, "password": password}
-            resp = requests.post(url, json=payload, timeout=self.timeout)
+            resp = requests.post(url, json=payload, headers=self._auth_headers(), timeout=self.timeout)
             resp.raise_for_status()
             return resp.json()
         except Exception:
             return None
 
     def get_dashboard_quality(self, target_role=None):
-        """获取看板出单质量统计数据"""
+        """获取看板质量统计数据"""
         try:
             url = f"{self.base_url}/dashboard/quality"
             params = {}
             if target_role:
                 params["target_role"] = target_role
-            resp = requests.get(url, params=params, timeout=self.timeout)
+            resp = requests.get(url, params=params, headers=self._auth_headers(), timeout=self.timeout)
             resp.raise_for_status()
             return resp.json()
         except Exception:
@@ -160,7 +166,7 @@ class ApiClient:
             params = {"page": 1, "page_size": 1}
             if since:
                 params["since"] = since
-            resp = requests.get(url, params=params, timeout=self.timeout)
+            resp = requests.get(url, params=params, headers=self._auth_headers(), timeout=self.timeout)
             resp.raise_for_status()
             return resp.json()
         except Exception:
@@ -170,80 +176,7 @@ class ApiClient:
         try:
             url = f"{self.base_url}/auth/register"
             payload = {"username": username, "password": password, "role": role}
-            resp = requests.post(url, json=payload, timeout=self.timeout)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception:
-            return None
-
-    # ===== 出单管理 =====
-
-    def get_orders(self, order_type=None, status=None, ticket_id=None, department=None, page=1, page_size=20):
-        """查询单据列表"""
-        try:
-            url = f"{self.base_url}/orders"
-            params = {"page": page, "page_size": page_size}
-            if order_type:
-                params["order_type"] = order_type
-            if status:
-                params["status"] = status
-            if ticket_id:
-                params["ticket_id"] = ticket_id
-            if department:
-                params["department"] = department
-            resp = requests.get(url, params=params, timeout=self.timeout)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception:
-            return None
-
-    def get_order(self, order_id):
-        """查询单据详情"""
-        try:
-            url = f"{self.base_url}/orders/{order_id}"
-            resp = requests.get(url, timeout=self.timeout)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception:
-            return None
-
-    def update_order_status(self, order_id, status, note=None):
-        """更新单据状态"""
-        try:
-            url = f"{self.base_url}/orders/{order_id}/status"
-            payload = {"status": status}
-            if note:
-                payload["note"] = note
-            resp = requests.put(url, json=payload, timeout=self.timeout)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception:
-            return None
-
-    def get_orders_by_ticket(self, ticket_id):
-        """根据工单ID查询关联单据"""
-        try:
-            url = f"{self.base_url}/orders/by-ticket/{ticket_id}"
-            resp = requests.get(url, timeout=self.timeout)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception:
-            return None
-
-    def create_order(self, ticket_id, order_type, department=None, sla_hours=48, material_list=None, remark=None):
-        """手动创建出单"""
-        try:
-            url = f"{self.base_url}/orders"
-            payload = {"ticket_id": ticket_id, "order_type": order_type}
-            if department:
-                payload["department"] = department
-            if sla_hours:
-                payload["sla_hours"] = sla_hours
-            if material_list:
-                payload["material_list"] = material_list
-            if remark:
-                payload["remark"] = remark
-            resp = requests.post(url, json=payload, timeout=self.timeout)
+            resp = requests.post(url, json=payload, headers=self._auth_headers(), timeout=self.timeout)
             resp.raise_for_status()
             return resp.json()
         except Exception:
@@ -264,7 +197,7 @@ class ApiClient:
                 params["start_date"] = start_date
             if end_date:
                 params["end_date"] = end_date
-            resp = requests.get(url, params=params, timeout=self.timeout)
+            resp = requests.get(url, params=params, headers=self._auth_headers(), timeout=self.timeout)
             resp.raise_for_status()
             return resp.json()
         except Exception:
@@ -281,7 +214,7 @@ class ApiClient:
                 params["end_date"] = end_date
             if model_number:
                 params["model_number"] = model_number
-            resp = requests.get(url, params=params, timeout=self.timeout)
+            resp = requests.get(url, params=params, headers=self._auth_headers(), timeout=self.timeout)
             resp.raise_for_status()
             return resp.json()
         except Exception:
@@ -300,66 +233,9 @@ class ApiClient:
                 params["start_date"] = start_date
             if end_date:
                 params["end_date"] = end_date
-            resp = requests.get(url, params=params, timeout=30)
+            resp = requests.get(url, params=params, headers=self._auth_headers(), timeout=30)
             resp.raise_for_status()
             return resp.content
-        except Exception:
-            return None
-
-    # ===== 映射规则 =====
-
-    def get_mapping_rules(self, is_active=None, issue_category=None):
-        """查询映射规则"""
-        try:
-            url = f"{self.base_url}/orders/mapping-rules"
-            params = {}
-            if is_active is not None:
-                params["is_active"] = is_active
-            if issue_category:
-                params["issue_category"] = issue_category
-            resp = requests.get(url, params=params, timeout=self.timeout)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception:
-            return None
-
-    def create_mapping_rule(self, issue_category, urgency_level, order_type, department, sla_hours=48, priority=0, description=None):
-        """创建映射规则"""
-        try:
-            url = f"{self.base_url}/orders/mapping-rules"
-            payload = {
-                "issue_category": issue_category,
-                "urgency_level": urgency_level,
-                "order_type": order_type,
-                "department": department,
-                "sla_hours": sla_hours,
-                "priority": priority,
-            }
-            if description:
-                payload["description"] = description
-            resp = requests.post(url, json=payload, timeout=self.timeout)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception:
-            return None
-
-    def update_mapping_rule(self, rule_id, **kwargs):
-        """更新映射规则"""
-        try:
-            url = f"{self.base_url}/orders/mapping-rules/{rule_id}"
-            resp = requests.put(url, json=kwargs, timeout=self.timeout)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception:
-            return None
-
-    def delete_mapping_rule(self, rule_id):
-        """删除映射规则"""
-        try:
-            url = f"{self.base_url}/orders/mapping-rules/{rule_id}"
-            resp = requests.delete(url, timeout=self.timeout)
-            resp.raise_for_status()
-            return resp.json()
         except Exception:
             return None
 
@@ -375,7 +251,7 @@ class ApiClient:
                 "target_role": target_role,
                 "reason": reason or "",
             }
-            resp = requests.post(url, json=payload, timeout=self.timeout)
+            resp = requests.post(url, json=payload, headers=self._auth_headers(), timeout=self.timeout)
             resp.raise_for_status()
             return resp.json()
         except Exception:
@@ -389,7 +265,7 @@ class ApiClient:
                 "ticket_ids": ticket_ids,
                 "reason": reason or "",
             }
-            resp = requests.post(url, json=payload, timeout=self.timeout)
+            resp = requests.post(url, json=payload, headers=self._auth_headers(), timeout=self.timeout)
             resp.raise_for_status()
             return resp.json()
         except Exception:
@@ -403,7 +279,7 @@ class ApiClient:
                 "ticket_ids": ticket_ids,
                 "reason": reason or "",
             }
-            resp = requests.post(url, json=payload, timeout=self.timeout)
+            resp = requests.post(url, json=payload, headers=self._auth_headers(), timeout=self.timeout)
             resp.raise_for_status()
             return resp.json()
         except Exception:
@@ -420,7 +296,7 @@ class ApiClient:
                 params["status"] = status
             if urgency_level:
                 params["urgency_level"] = urgency_level
-            resp = requests.get(url, params=params, timeout=self.timeout)
+            resp = requests.get(url, params=params, headers=self._auth_headers(), timeout=self.timeout)
             resp.raise_for_status()
             return resp.json()
         except Exception:
@@ -439,7 +315,7 @@ class ApiClient:
                 params["start_date"] = start_date
             if end_date:
                 params["end_date"] = end_date
-            resp = requests.get(url, params=params, timeout=60)
+            resp = requests.get(url, params=params, headers=self._auth_headers(), timeout=60)
             resp.raise_for_status()
             content_type = resp.headers.get("Content-Type", "application/octet-stream")
             cd = resp.headers.get("Content-Disposition", "")

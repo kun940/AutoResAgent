@@ -19,7 +19,6 @@ from desktop.views.login_view import LoginWindow
 from desktop.views.dashboard_view import DashboardView
 from desktop.views.submit_complaint_view import SubmitComplaintView
 from desktop.views.ticket_list_view import TicketListView
-from desktop.views.order_manage_view import OrderManageView
 from desktop.views.quality_analysis_view import QualityAnalysisView
 from desktop.views.settings_view import SettingsView
 
@@ -74,12 +73,12 @@ class NavButton(QPushButton):
 
 
 # 角色可见页面配置：角色 -> 允许的页面索引列表
-# 页面索引：0=主看板, 1=提交客诉, 2=工单列表, 3=出单管理, 4=质量分析, 5=系统设置
+# v1.2 页面索引：0=主看板, 1=提交客诉, 2=工单列表, 3=质量分析, 4=系统设置
 ROLE_NAV_MAP = {
-    "frontline_staff": [0, 1, 2, 3],             # 主看板、提交客诉、工单列表、出单管理
-    "department_manager": [0, 1, 2, 3, 4],        # 主看板、提交客诉、工单列表、出单管理、质量分析
-    "general_manager": [0, 1, 2, 3, 4, 5],       # 全部页面
-    "admin": [0, 1, 2, 3, 4, 5],                  # 全部页面
+    "frontline_staff": [0, 1, 2],              # 主看板、提交客诉、工单列表
+    "department_manager": [0, 1, 2, 3],        # 主看板、提交客诉、工单列表、质量分析
+    "general_manager": [0, 1, 2, 3, 4],       # 全部页面
+    "admin": [0, 1, 2, 3, 4],                  # 全部页面
 }
 
 
@@ -117,7 +116,6 @@ class SidebarWidget(QWidget):
             ("主看板", "\U0001F4CA"),
             ("提交客诉", "\U0001F4E4"),
             ("工单列表", "\U0001F4CB"),
-            ("出单管理", "\U0001F4E6"),
             ("质量分析", "\U0001F52C"),
             ("系统设置", "\u2699\uFE0F"),
         ]
@@ -196,7 +194,7 @@ class PlaceholderPage(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self, api_client=None):
         super().__init__()
-        self.setWindowTitle("客诉自动回复出单智能体")
+        self.setWindowTitle("客诉自动回复与质量追溯系统")
         self.resize(1200, 800)
         self._center_window()
 
@@ -251,7 +249,7 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.stack.setObjectName("content_area")
 
-        page_titles = ["主看板", "提交客诉", "工单列表", "出单管理", "质量分析", "系统设置"]
+        page_titles = ["主看板", "提交客诉", "工单列表", "质量分析", "系统设置"]
         for title in page_titles:
             page = PlaceholderPage(title)
             self.stack.addWidget(page)
@@ -263,11 +261,9 @@ class MainWindow(QMainWindow):
         self.stack.removeWidget(self.stack.widget(2))
         self.stack.insertWidget(2, TicketListView(self.api_client, role=self._role))
         self.stack.removeWidget(self.stack.widget(3))
-        self.stack.insertWidget(3, OrderManageView(self.api_client, role=self._role))
+        self.stack.insertWidget(3, QualityAnalysisView(self.api_client, role=self._role))
         self.stack.removeWidget(self.stack.widget(4))
-        self.stack.insertWidget(4, QualityAnalysisView(self.api_client, role=self._role))
-        self.stack.removeWidget(self.stack.widget(5))
-        self.stack.insertWidget(5, SettingsView(self.api_client))
+        self.stack.insertWidget(4, SettingsView(self.api_client))
 
         right_layout.addWidget(self.stack)
         main_layout.addWidget(right_container)

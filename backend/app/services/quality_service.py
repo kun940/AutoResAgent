@@ -7,7 +7,7 @@ from typing import Optional
 from sqlalchemy import select, func, case, and_, extract
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.models.models import QualityTraceIndex, ServiceOrder, Ticket
+from backend.app.models.models import QualityTraceIndex, Ticket
 from backend.app.schemas.quality import QualityTraceQuery, QualityDashboardQuery, QualityExportQuery
 
 logger = logging.getLogger(__name__)
@@ -25,8 +25,10 @@ class QualityService:
             conditions.append(QualityTraceIndex.batch_code == query.batch_code)
         if query.issue_category:
             conditions.append(QualityTraceIndex.issue_category == query.issue_category)
-        if query.order_type:
-            conditions.append(QualityTraceIndex.order_type == query.order_type)
+        if query.action_type:
+            conditions.append(QualityTraceIndex.order_type == query.action_type)
+        if query.archive_complete is not None:
+            conditions.append(QualityTraceIndex.archive_complete == query.archive_complete)
         if query.start_date:
             start_dt = datetime.strptime(query.start_date, "%Y-%m-%d")
             conditions.append(QualityTraceIndex.created_at >= start_dt)
@@ -38,7 +40,7 @@ class QualityService:
         summary_stmt = select(
             func.count().label("total_records"),
             func.count(QualityTraceIndex.ticket_id.distinct()).label("total_tickets"),
-            func.count(QualityTraceIndex.order_id).label("total_orders"),
+            func.count(QualityTraceIndex.ticket_id).label("total_archived"),
             func.avg(QualityTraceIndex.resolution_days).label("avg_resolution_days"),
         )
         if conditions:
@@ -49,7 +51,7 @@ class QualityService:
         summary = {
             "total_records": summary_row.total_records or 0,
             "total_tickets": summary_row.total_tickets or 0,
-            "total_orders": summary_row.total_orders or 0,
+            "total_archived": summary_row.total_archived or 0,
             "avg_resolution_days": round(summary_row.avg_resolution_days, 1) if summary_row.avg_resolution_days else 0,
         }
 
@@ -71,7 +73,7 @@ class QualityService:
             dimension_col.label("dimension"),
             func.count().label("record_count"),
             func.count(QualityTraceIndex.ticket_id.distinct()).label("ticket_count"),
-            func.count(QualityTraceIndex.order_id).label("order_count"),
+            func.count(QualityTraceIndex.ticket_id).label("archived_count"),
             func.avg(QualityTraceIndex.resolution_days).label("avg_resolution_days"),
         ).group_by(dimension_col).order_by(func.count().desc())
 
@@ -101,7 +103,7 @@ class QualityService:
             cat_result = await db.execute(cat_stmt)
             category_distribution = {r[0] or "未知": r[1] for r in cat_result.all()}
 
-            # 出单类型分布
+            # 处理动作分布（v1.2: 原 order_type_distribution）
             ot_stmt = select(
                 QualityTraceIndex.order_type,
                 func.count().label("cnt"),
@@ -109,7 +111,7 @@ class QualityService:
             for c in group_conditions:
                 ot_stmt = ot_stmt.where(c)
             ot_result = await db.execute(ot_stmt)
-            order_type_distribution = {r[0] or "未知": r[1] for r in ot_result.all()}
+            action_type_distribution = {r[0] or "未知": r[1] for r in ot_result.all()}
 
             # 紧急度分布
             urg_stmt = select(
@@ -133,9 +135,9 @@ class QualityService:
             groups.append({
                 "dimension": dim_value,
                 "ticket_count": row.ticket_count or 0,
-                "order_count": row.order_count or 0,
+                "archived_count": row.archived_count or 0,
                 "category_distribution": category_distribution,
-                "order_type_distribution": order_type_distribution,
+                "action_type_distribution": action_type_distribution,
                 "urgency_distribution": urgency_distribution,
                 "avg_resolution_days": round(row.avg_resolution_days, 1) if row.avg_resolution_days else None,
                 "high_priority_count": high_priority_count,
@@ -161,8 +163,9 @@ class QualityService:
         # 1. 概览数据
         overview_stmt = select(
             func.count(QualityTraceIndex.ticket_id.distinct()).label("total_tickets"),
-            func.count(QualityTraceIndex.order_id).label("total_orders"),
+            func.count(QualityTraceIndex.ticket_id).label("total_archived"),
             func.count(case((QualityTraceIndex.urgency_level == "High_Priority", 1))).label("high_urgency_count"),
+            func.count(case((QualityTraceIndex.archive_complete == 1, 1))).label("archive_complete_count"),
         )
         if conditions:
             overview_stmt = overview_stmt.where(*conditions)
@@ -170,45 +173,25 @@ class QualityService:
         overview_row = overview_result.one()
 
         total_tickets = overview_row.total_tickets or 0
+        total_archived = overview_row.total_archived or 0
         high_urgency_count = overview_row.high_urgency_count or 0
-        total_orders = overview_row.total_orders or 0
+        archive_complete_count = overview_row.archive_complete_count or 0
 
-        # SLA达标率：在截止时间前完成的出单占比
-        sla_stmt = select(func.count()).select_from(ServiceOrder).where(
-            ServiceOrder.completed_at <= ServiceOrder.deadline,
-            ServiceOrder.status == "completed",
-        )
-        if query.start_date:
-            sla_stmt = sla_stmt.where(ServiceOrder.created_at >= start_dt)
-        if query.end_date:
-            sla_stmt = sla_stmt.where(ServiceOrder.created_at < end_dt)
-        sla_result = await db.execute(sla_stmt)
-        sla_met = sla_result.scalar() or 0
-
-        total_completed_stmt = select(func.count()).select_from(ServiceOrder).where(
-            ServiceOrder.status == "completed",
-        )
-        if query.start_date:
-            total_completed_stmt = total_completed_stmt.where(ServiceOrder.created_at >= start_dt)
-        if query.end_date:
-            total_completed_stmt = total_completed_stmt.where(ServiceOrder.created_at < end_dt)
-        total_completed_result = await db.execute(total_completed_stmt)
-        total_completed = total_completed_result.scalar() or 0
-
-        sla_rate = round(sla_met / total_completed * 100, 1) if total_completed > 0 else 0
+        # v1.2: 归档完整率（替代原 SLA 达标率）
+        archive_complete_rate = round(archive_complete_count / total_archived * 100, 1) if total_archived > 0 else 0
 
         overview = {
             "total_tickets": total_tickets,
-            "total_orders": total_orders,
+            "total_archived": total_archived,
             "high_urgency_rate": round(high_urgency_count / total_tickets * 100, 1) if total_tickets > 0 else 0,
-            "sla_rate": sla_rate,
+            "archive_complete_rate": archive_complete_rate,
         }
 
         # 2. 日趋势
         trend_stmt = select(
             func.date_format(QualityTraceIndex.created_at, "%Y-%m-%d").label("date"),
             func.count(QualityTraceIndex.ticket_id.distinct()).label("ticket_count"),
-            func.count(QualityTraceIndex.order_id).label("order_count"),
+            func.count(QualityTraceIndex.ticket_id).label("archived_count"),
         ).group_by(func.date_format(QualityTraceIndex.created_at, "%Y-%m-%d")).order_by(func.date_format(QualityTraceIndex.created_at, "%Y-%m-%d"))
         if conditions:
             trend_stmt = trend_stmt.where(*conditions)
@@ -218,7 +201,7 @@ class QualityService:
         trend = {
             "dates": [r.date for r in trend_rows],
             "ticket_counts": [r.ticket_count for r in trend_rows],
-            "order_counts": [r.order_count for r in trend_rows],
+            "archived_counts": [r.archived_count for r in trend_rows],
         }
 
         # 3. TOP5型号
@@ -244,7 +227,7 @@ class QualityService:
         cat_result = await db.execute(cat_stmt)
         category_distribution = {r.issue_category or "未知": r.count for r in cat_result.all()}
 
-        # 5. 出单类型分布
+        # 5. 处理动作分布（v1.2: 原 order_type_distribution）
         ot_stmt = select(
             QualityTraceIndex.order_type,
             func.count().label("count"),
@@ -252,14 +235,14 @@ class QualityService:
         if conditions:
             ot_stmt = ot_stmt.where(*conditions)
         ot_result = await db.execute(ot_stmt)
-        order_type_distribution = {r.order_type or "未知": r.count for r in ot_result.all()}
+        action_type_distribution = {r.order_type or "未知": r.count for r in ot_result.all()}
 
         return {
             "overview": overview,
             "trend": trend,
             "top_models": top_models,
             "category_distribution": category_distribution,
-            "order_type_distribution": order_type_distribution,
+            "action_type_distribution": action_type_distribution,
         }
 
     async def export_report(self, db: AsyncSession, query: QualityExportQuery) -> bytes:
@@ -286,8 +269,8 @@ class QualityService:
         # 表头
         headers = [
             "工单编号", "产品型号", "批次号",
-            "问题分类", "紧急度", "出单类型", "质保状态",
-            "解决天数", "追溯日期",
+            "问题分类", "紧急度", "处理动作", "质保状态",
+            "解决天数", "归档完整性", "追溯日期",
         ]
 
         # 数据行
@@ -302,6 +285,7 @@ class QualityService:
                 r.order_type or "",
                 r.warranty_status or "",
                 str(r.resolution_days) if r.resolution_days is not None else "",
+                "完整" if r.archive_complete == 1 else "部分缺失",
                 r.trace_date.strftime("%Y-%m-%d") if r.trace_date else "",
             ])
 

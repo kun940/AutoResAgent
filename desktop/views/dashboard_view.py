@@ -38,21 +38,6 @@ STATUS_LABELS = {
 
 ROLE_HIERARCHY = ["frontline_staff", "department_manager", "general_manager"]
 
-ORDER_TYPE_LABELS = {
-    "Replacement": "补发单",
-    "Repair": "维修单",
-    "Return_Exchange": "退换单",
-    "Tech_Support": "技术支援单",
-    "QC": "质检单",
-}
-
-ORDER_STATUS_LABELS = {
-    "none": "未出单",
-    "pending_manual": "待补单",
-    "ordered": "已出单",
-}
-
-
 class CollapsibleSection(QWidget):
     """可折叠的区域组件"""
 
@@ -125,7 +110,7 @@ class SubordinateLoadThread(QThread):
 
 
 class QualityDashboardLoadThread(QThread):
-    """出单质量看板数据加载线程"""
+    """质量看板数据加载线程（v1.2: 出单统计已移除，保留线程供后续扩展）"""
     finished = pyqtSignal(object)
 
     def __init__(self, api_client, target_role=None):
@@ -224,18 +209,6 @@ class DashboardView(QWidget):
         cards_layout.addWidget(self.card_overdue)
         main_layout.addLayout(cards_layout)
 
-        # 出单统计卡片
-        order_cards_layout = QHBoxLayout()
-        order_cards_layout.setSpacing(16)
-
-        self.card_order_total = StatCard("📦", "出单总数", "0", "#2196F3")
-        self.card_order_pending = StatCard("📝", "待处理出单", "0", "#FF9800")
-
-        order_cards_layout.addWidget(self.card_order_total)
-        order_cards_layout.addWidget(self.card_order_pending)
-        order_cards_layout.addStretch()
-        main_layout.addLayout(order_cards_layout)
-
         mid_layout = QHBoxLayout()
         mid_layout.setSpacing(16)
 
@@ -250,12 +223,6 @@ class DashboardView(QWidget):
         mid_layout.addWidget(self.trend_group)
 
         main_layout.addLayout(mid_layout, 3)
-
-        # 出单类型分布
-        self.order_type_group = QGroupBox("📦 出单类型分布")
-        self.order_type_layout = QVBoxLayout(self.order_type_group)
-        self.order_type_layout.setSpacing(8)
-        main_layout.addWidget(self.order_type_group)
 
         self.overdue_group = QGroupBox("⚠ 超时预警")
         self.overdue_layout = QVBoxLayout(self.overdue_group)
@@ -308,11 +275,6 @@ class DashboardView(QWidget):
         self._load_thread.finished.connect(self._on_data_loaded)
         self._load_thread.start()
 
-        # 加载出单质量看板数据
-        self._quality_thread = QualityDashboardLoadThread(self.api_client, target_role=self._role)
-        self._quality_thread.finished.connect(self._on_quality_loaded)
-        self._quality_thread.start()
-
         if self._has_subordinates():
             self._sub_thread = SubordinateLoadThread(self.api_client, self._role)
             self._sub_thread.finished.connect(self._on_subordinate_loaded)
@@ -333,23 +295,6 @@ class DashboardView(QWidget):
         self._update_category(data)
         self._update_trend(data)
         self._update_overdue(data)
-
-    def _on_quality_loaded(self, result):
-        """出单质量看板数据加载完成"""
-        if result is None or (isinstance(result, dict) and result.get("code") != 0):
-            self.card_order_total.set_value("-")
-            self.card_order_pending.set_value("-")
-            self._update_order_type_distribution(None)
-            return
-
-        data = result.get("data", {}) if isinstance(result, dict) else {}
-
-        # 更新出单统计卡片
-        self.card_order_total.set_value(data.get("total_orders", 0))
-        self.card_order_pending.set_value(data.get("pending_orders", 0))
-
-        # 更新出单类型分布
-        self._update_order_type_distribution(data)
 
     def _on_subordinate_loaded(self, result):
         if result is None or result.get("code") != 0:
@@ -531,68 +476,6 @@ class DashboardView(QWidget):
             row.addWidget(count_label)
 
             self.trend_layout.addLayout(row)
-
-    def _update_order_type_distribution(self, data):
-        """更新出单类型分布（使用QTableWidget展示）"""
-        self._clear_layout(self.order_type_layout)
-
-        if data is None:
-            label = QLabel("暂无出单数据")
-            label.setStyleSheet("color: #BDC3C7; font-size: 13px;")
-            self.order_type_layout.addWidget(label)
-            return
-
-        distribution = data.get("order_type_distribution", {})
-        if not distribution:
-            label = QLabel("暂无出单类型数据")
-            label.setStyleSheet("color: #BDC3C7; font-size: 13px;")
-            self.order_type_layout.addWidget(label)
-            return
-
-        # 使用QTableWidget展示出单类型分布
-        table = QTableWidget()
-        table.setColumnCount(3)
-        table.setHorizontalHeaderLabels(["出单类型", "数量", "占比"])
-        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        table.verticalHeader().setVisible(False)
-        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-        table.setAlternatingRowColors(True)
-        table.setMaximumHeight(min(len(distribution) * 36 + 40, 200))
-
-        total = sum(distribution.values()) or 1
-        table.setRowCount(len(distribution))
-
-        # 出单类型对应的颜色
-        type_colors = {
-            "Replacement": "#2196F3",
-            "Repair": "#FF9800",
-            "Return_Exchange": "#E91E63",
-            "Tech_Support": "#4CAF50",
-            "QC": "#9C27B0",
-        }
-
-        for row, (key, count) in enumerate(distribution.items()):
-            name = ORDER_TYPE_LABELS.get(key, key)
-            name_item = QTableWidgetItem(name)
-            color = type_colors.get(key, "#2C3E50")
-            name_item.setForeground(QColor(color))
-            name_item.setFont(QFont("", -1, QFont.Weight.Bold))
-            table.setItem(row, 0, name_item)
-
-            count_item = QTableWidgetItem(str(count))
-            count_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            table.setItem(row, 1, count_item)
-
-            pct = f"{count / total * 100:.1f}%"
-            pct_item = QTableWidgetItem(pct)
-            pct_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            table.setItem(row, 2, pct_item)
-
-        for row in range(table.rowCount()):
-            table.setRowHeight(row, 32)
-
-        self.order_type_layout.addWidget(table)
 
     def _update_overdue(self, data):
         overdue_count = data.get("overdue_count", 0)

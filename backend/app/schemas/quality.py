@@ -11,7 +11,8 @@ class QualityTraceQuery(BaseModel):
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     issue_category: Optional[str] = None
-    order_type: Optional[str] = None
+    action_type: Optional[str] = None  # v1.2: 处理动作类型筛选（原 order_type）
+    archive_complete: Optional[int] = None  # v1.2 新增：归档完整性筛选 1=完整 0=部分缺失
     group_by: str = "model"  # model/batch/date/category
     page: int = 1
     page_size: int = 20
@@ -37,9 +38,9 @@ class QualityTraceGroup(BaseModel):
     """质量追溯分组数据"""
     dimension: str
     ticket_count: int = 0
-    order_count: int = 0
+    archived_count: int = 0  # v1.2: 归档工单数（原 order_count）
     category_distribution: Optional[Dict[str, int]] = None
-    order_type_distribution: Optional[Dict[str, int]] = None
+    action_type_distribution: Optional[Dict[str, int]] = None  # v1.2: 处理动作分布（原 order_type_distribution）
     urgency_distribution: Optional[Dict[str, int]] = None
     avg_resolution_days: Optional[float] = None
     high_priority_count: int = 0
@@ -57,4 +58,4 @@ class QualityDashboardResponse(BaseModel):
     trend: Dict[str, Any]
     top_models: List[Dict[str, Any]]
     category_distribution: Dict[str, int]
-    order_type_distribution: Dict[str, int]
+    action_type_distribution: Dict[str, int]  # v1.2: 处理动作分布（原 order_type_distribution）

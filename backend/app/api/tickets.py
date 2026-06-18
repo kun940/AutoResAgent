@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
 from backend.app.middleware.auth_middleware import get_current_user
-from backend.app.models.models import EvidenceFile, Ticket, TicketLog, User, ServiceOrder
+from backend.app.models.models import EvidenceFile, Ticket, TicketLog, User
 from backend.app.schemas.ticket import (
     TicketResponse,
     TicketStatusUpdateRequest,
@@ -449,17 +449,7 @@ async def get_ticket(
         if files:
             ticket_data.evidence_images = [f.file_path for f in files if f.file_type == "image"]
 
-        # 查询关联出单
-        order_stmt = select(ServiceOrder).where(ServiceOrder.ticket_id == ticket_id).order_by(ServiceOrder.created_at.desc())
-        order_result = await db.execute(order_stmt)
-        orders = list(order_result.scalars().all())
-        from backend.app.schemas.order import OrderResponse
-        ticket_orders = [OrderResponse.model_validate(o).model_dump() for o in orders]
-
-        response_data = ticket_data.model_dump()
-        response_data["orders"] = ticket_orders
-
-        return ApiResponse(data=response_data)
+        return ApiResponse(data=ticket_data.model_dump())
     except Exception as e:
         logger.error(f"Get ticket failed: {e}")
         return ApiResponse(code=1, message=str(e))
