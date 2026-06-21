@@ -21,14 +21,21 @@ class SopIndexer:
             documents = []
             for sop in sops:
                 doc_id = f"sop_{sop.id}"
+                # v1.3: 索引内容纳入 emergency_actions 和 scenario_tags
                 content = f"{sop.title}\n{sop.content}"
                 if hasattr(sop, "keywords") and sop.keywords:
                     content = f"{sop.title} 关键词:{sop.keywords}\n{sop.content}"
+                if hasattr(sop, "emergency_actions") and sop.emergency_actions:
+                    content += f"\n紧急止损动作:{sop.emergency_actions}"
+                if hasattr(sop, "scenario_tags") and sop.scenario_tags:
+                    content += f"\n适用场景:{sop.scenario_tags}"
+                # v1.3: metadata 新增 has_emergency_actions 标记
                 metadata = {
                     "mysql_id": sop.id,
                     "issue_category": sop.issue_category,
                     "title": sop.title,
                     "urgency_level": sop.urgency_level or "",
+                    "has_emergency_actions": 1 if (hasattr(sop, "emergency_actions") and sop.emergency_actions) else 0,
                 }
                 documents.append({"id": doc_id, "content": content, "metadata": metadata})
 

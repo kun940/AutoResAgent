@@ -47,6 +47,8 @@ class Ticket(Base):
     routing_decision: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     auto_reply_sent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     sop_applied: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    # v1.3: 图片分析结果(含damage_detected/damage_level/fault_types_found/has_emergency_indicators/overall_assessment/suggestion/analysis_source/image_count)
+    image_analysis: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(30), default=TicketStatus.PENDING)
     assigned_to: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=datetime.now)
@@ -89,6 +91,10 @@ class SopKnowledge(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     urgency_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     keywords: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # v1.3: 紧急止损动作列表
+    emergency_actions: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    # v1.3: 适用场景标签
+    scenario_tags: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     is_active: Mapped[int] = mapped_column(SmallInteger, default=1)
     version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=datetime.now)

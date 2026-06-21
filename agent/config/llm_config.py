@@ -32,28 +32,16 @@ def get_qwen_llm(temperature: float = 0.1, max_tokens: int = 2048) -> ChatOpenAI
     )
 
 
-def get_qwen_vl_llm(temperature: float = 0.1, max_tokens: int = 2048) -> ChatOpenAI:
-    return ChatOpenAI(
-        model="Qwen/QwQ-32B",
-        api_key=settings.DASHSCOPE_API_KEY,
-        base_url=settings.QWEN_BASE_URL,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        timeout=settings.LLM_TIMEOUT_SECONDS,
-    )
-
-
 MODEL_FACTORIES = {
     "deepseek": get_deepseek_llm,
     "qwen": get_qwen_llm,
-    "qwen_vl": get_qwen_vl_llm,
 }
 
 TASK_MODEL_MAP = {
     "field_extraction": {"primary": "deepseek", "fallback": "qwen"},
     "business_assessment": {"primary": "deepseek", "fallback": "qwen"},
     "rag_reply_generation": {"primary": "qwen", "fallback": "deepseek"},
-    "image_analysis": {"primary": "qwen_vl", "fallback": None},
+    "image_analysis": {"primary": "qwen", "fallback": "deepseek"},
 }
 
 FALLBACK_TEMPLATE_REPLY = (

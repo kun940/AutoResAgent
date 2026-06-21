@@ -87,6 +87,8 @@ class TicketService:
             routing_decision=result.get("routing_decision"),
             auto_reply_sent=result.get("auto_reply_sent"),
             sop_applied=result.get("sop_applied"),
+            # v1.3: 持久化图片分析结果
+            image_analysis=result.get("image_analysis"),
             status=TicketStatus.ROUTED,
         )
         db.add(ticket)

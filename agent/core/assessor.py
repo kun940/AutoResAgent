@@ -18,13 +18,23 @@ VALID_WARRANTIES = {e.value for e in WarrantyStatus}
 
 
 class AssessmentAgent:
-    async def assess(self, extracted_data: dict) -> dict:
+    async def assess(self, extracted_data: dict, image_analysis: dict = None, raw_text: str = None) -> dict:
         llm = get_llm_for_task("business_assessment", temperature=ASSESS_TEMPERATURE, max_tokens=ASSESS_MAX_TOKENS)
 
         if llm is None:
-            return self._fallback_assess(extracted_data)
+            return self._fallback_assess(extracted_data, image_analysis=image_analysis)
 
-        extracted_json = json.dumps(extracted_data, ensure_ascii=False)
+        # 若有图片分析结果，将图片证据信息添加到 extracted_data 中
+        assess_data = dict(extracted_data)
+        if image_analysis and image_analysis.get("damage_detected"):
+            assess_data["image_evidence"] = {
+                "damage_detected": image_analysis.get("damage_detected", False),
+                "damage_level": image_analysis.get("damage_level", "none"),
+                "fault_types_found": image_analysis.get("fault_types_found", []),
+                "has_emergency_indicators": image_analysis.get("has_emergency_indicators", False),
+            }
+
+        extracted_json = json.dumps(assess_data, ensure_ascii=False)
         user_content = ASSESS_USER_PROMPT.format(extracted_json=extracted_json)
 
         messages = [
@@ -34,12 +44,12 @@ class AssessmentAgent:
 
         try:
             response = await llm.ainvoke(messages)
-            return self._parse_response(response.content, extracted_data)
+            return self._parse_response(response.content, extracted_data, image_analysis=image_analysis, raw_text=raw_text)
         except Exception as e:
             logger.error(f"Assessment LLM call failed: {e}")
-            return self._fallback_assess(extracted_data)
+            return self._fallback_assess(extracted_data, image_analysis=image_analysis)
 
-    def _parse_response(self, content: str, extracted_data: dict) -> dict:
+    def _parse_response(self, content: str, extracted_data: dict, image_analysis=None, raw_text: str = None) -> dict:
         try:
             cleaned = content.strip()
             if cleaned.startswith("```json"):
@@ -56,6 +66,43 @@ class AssessmentAgent:
             business_impact = result.get("business_impact", "Minor_Inconvenience")
             urgency_level = result.get("urgency_level", "Medium_Priority")
             warranty_status = result.get("warranty_status", "Unknown")
+
+            # 图片证据定级覆盖：紧急指标强制高优先级
+            if image_analysis and image_analysis.get("has_emergency_indicators"):
+                urgency_level = "High_Priority"
+            if image_analysis and image_analysis.get("damage_level") == "severe":
+                if business_impact not in ("Safety_Hazard", "Group_Risk"):
+                    business_impact = "Safety_Hazard"
+
+            # v1.3 关键词强制覆盖：防止LLM对边界case判断不稳定
+            # 合并原始客诉文本和故障描述进行关键词匹配
+            original_text = ((raw_text or "") + " " + (extracted_data.get("core_fault_desc") or "")).lower()
+
+            # 进水场景：短路+触电风险，强制High_Priority
+            if any(kw in original_text for kw in ["进水", "淋雨", "水浸", "水渍", "液体泼溅", "泡水"]):
+                urgency_level = "High_Priority"
+                if business_impact not in ("Safety_Hazard", "Group_Risk"):
+                    business_impact = "Safety_Hazard"
+                if issue_category not in ("Hardware_Malfunction", "Electrical_Leakage"):
+                    issue_category = "Hardware_Malfunction"
+
+            # 批次/批量场景：群体性风险，强制Batch_Defect + High_Priority
+            if any(kw in original_text for kw in ["批次", "批量", "多台", "群体", "同故障", "这批", "这批产品"]):
+                urgency_level = "High_Priority"
+                business_impact = "Group_Risk"
+                issue_category = "Batch_Defect"
+
+            # 漏电/触电场景：强制Electrical_Leakage + High_Priority
+            if any(kw in original_text for kw in ["漏电", "触电", "电击", "麻手", "麻了"]):
+                urgency_level = "High_Priority"
+                business_impact = "Safety_Hazard"
+                issue_category = "Electrical_Leakage"
+
+            # 冒烟/起火场景：强制Hardware_Thermal_Runaway + High_Priority
+            if any(kw in original_text for kw in ["冒烟", "起火", "明火", "烧焦", "烧起来"]):
+                urgency_level = "High_Priority"
+                business_impact = "Safety_Hazard"
+                issue_category = "Hardware_Thermal_Runaway"
 
             if issue_category not in VALID_CATEGORIES:
                 issue_category = "Other"
@@ -74,15 +121,48 @@ class AssessmentAgent:
             }
         except (json.JSONDecodeError, AttributeError) as e:
             logger.warning(f"Failed to parse assessment response: {e}")
-            return self._fallback_assess(extracted_data)
+            return self._fallback_assess(extracted_data, image_analysis=image_analysis)
 
     @staticmethod
-    def _fallback_assess(extracted_data: dict) -> dict:
+    def _fallback_assess(extracted_data: dict, image_analysis=None) -> dict:
         fault = extracted_data.get("core_fault_desc", "")
+
+        # 图片证据中的紧急指标 → 强制 High_Priority
+        if image_analysis and image_analysis.get("has_emergency_indicators"):
+            fault_types = image_analysis.get("fault_types_found", [])
+            if any(t in str(fault_types) for t in ["冒烟", "烧焦", "起火"]):
+                return {
+                    "issue_category": IssueCategory.HARDWARE_THERMAL_RUNAWAY.value,
+                    "business_impact": BusinessImpact.SAFETY_HAZARD.value,
+                    "urgency_level": UrgencyLevel.HIGH.value,
+                    "warranty_status": WarrantyStatus.IN_WARRANTY.value,
+                }
+            if any(t in str(fault_types) for t in ["漏电", "触电", "水渍"]):
+                return {
+                    "issue_category": IssueCategory.ELECTRICAL_LEAKAGE.value,
+                    "business_impact": BusinessImpact.SAFETY_HAZARD.value,
+                    "urgency_level": UrgencyLevel.HIGH.value,
+                    "warranty_status": WarrantyStatus.IN_WARRANTY.value,
+                }
+            return {
+                "issue_category": IssueCategory.OTHER.value,
+                "business_impact": BusinessImpact.SAFETY_HAZARD.value,
+                "urgency_level": UrgencyLevel.HIGH.value,
+                "warranty_status": WarrantyStatus.UNKNOWN.value,
+            }
 
         if any(kw in fault for kw in ["冒烟", "起火", "漏电", "触电"]):
             return {
                 "issue_category": IssueCategory.HARDWARE_THERMAL_RUNAWAY.value,
+                "business_impact": BusinessImpact.SAFETY_HAZARD.value,
+                "urgency_level": UrgencyLevel.HIGH.value,
+                "warranty_status": WarrantyStatus.IN_WARRANTY.value,
+            }
+
+        # 进水场景：短路+触电风险，High_Priority
+        if any(kw in fault for kw in ["进水", "淋雨", "水浸", "水渍", "液体"]):
+            return {
+                "issue_category": IssueCategory.HARDWARE_MALFUNCTION.value,
                 "business_impact": BusinessImpact.SAFETY_HAZARD.value,
                 "urgency_level": UrgencyLevel.HIGH.value,
                 "warranty_status": WarrantyStatus.IN_WARRANTY.value,

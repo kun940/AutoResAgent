@@ -51,6 +51,8 @@ class TicketResponse(BaseModel):
     created_at: Optional[datetime] = None
     resolved_at: Optional[datetime] = None
     evidence_images: Optional[List[str]] = None
+    # v1.3: 图片分析结果
+    image_analysis: Optional[dict] = None
 
 
 class TicketListQuery(BaseModel):

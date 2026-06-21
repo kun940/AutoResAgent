@@ -38,5 +38,10 @@ class Settings:
     JWT_SECRET: str = os.getenv("JWT_SECRET", "dev-secret-change-in-production")
     JWT_EXPIRE_HOURS: int = int(os.getenv("JWT_EXPIRE_HOURS", "24"))
 
+    # v1.3: OCR 相关配置
+    OCR_ENABLED: str = os.getenv("OCR_ENABLED", "1")
+    PADDLEOCR_USE_ANGLE_CLS: str = os.getenv("PADDLEOCR_USE_ANGLE_CLS", "true")
+    PADDLEOCR_LANG: str = os.getenv("PADDLEOCR_LANG", "ch")
+
 
 settings = Settings()
