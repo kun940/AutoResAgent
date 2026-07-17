@@ -1,10 +1,12 @@
 """修改notifications表type列，添加order_created枚举值"""
-import pymysql
+import sys
+from pathlib import Path
 
-conn = pymysql.connect(
-    host='localhost', port=3306, user='root',
-    password='Lkj070329', database='complaint_agent', charset='utf8mb4'
-)
+# 允许从脚本目录直接导入 _db
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _db import get_connection
+
+conn = get_connection()
 cursor = conn.cursor()
 
 # 查看当前定义

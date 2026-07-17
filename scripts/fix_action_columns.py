@@ -1,10 +1,12 @@
 """修改ticket_logs表action列，支持新的action值"""
-import pymysql
+import sys
+from pathlib import Path
 
-conn = pymysql.connect(
-    host='localhost', port=3306, user='root',
-    password='Lkj070329', database='complaint_agent', charset='utf8mb4'
-)
+# 允许从脚本目录直接导入 _db
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _db import get_connection
+
+conn = get_connection()
 cursor = conn.cursor()
 
 # 检查ticket_logs的action列

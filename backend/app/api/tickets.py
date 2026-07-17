@@ -124,6 +124,7 @@ async def list_tickets(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     try:
         tickets, total = await ticket_service.list_tickets(
@@ -151,6 +152,7 @@ async def search_tickets(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """关键词搜索工单（搜索范围：ticket_id, customer_name, customer_phone, raw_input）"""
     try:
@@ -436,6 +438,7 @@ async def batch_close(
 async def get_ticket(
     ticket_id: str,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     try:
         ticket = await ticket_service.get_ticket(db=db, ticket_id=ticket_id)
@@ -460,6 +463,7 @@ async def update_ticket_status(
     ticket_id: str,
     request: TicketStatusUpdateRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     try:
         ticket = await ticket_service.update_status(
@@ -483,6 +487,7 @@ async def escalate_ticket(
     ticket_id: str,
     request: TicketEscalateRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     try:
         ticket = await ticket_service.escalate(
@@ -504,6 +509,7 @@ async def reassign_ticket(
     ticket_id: str,
     request: TicketReassignRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     try:
         ticket = await ticket_service.reassign(

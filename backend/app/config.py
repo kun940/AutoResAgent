@@ -35,7 +35,7 @@ class Settings:
     FASTAPI_HOST: str = os.getenv("FASTAPI_HOST", "0.0.0.0")
     FASTAPI_PORT: int = int(os.getenv("FASTAPI_PORT", "8000"))
 
-    JWT_SECRET: str = os.getenv("JWT_SECRET", "dev-secret-change-in-production")
+    JWT_SECRET: str = os.getenv("JWT_SECRET", "")
     JWT_EXPIRE_HOURS: int = int(os.getenv("JWT_EXPIRE_HOURS", "24"))
 
     # v1.3: OCR 相关配置
@@ -45,3 +45,12 @@ class Settings:
 
 
 settings = Settings()
+
+
+# 启动时校验：拒绝弱 JWT 密钥，防止可被猜测/伪造的默认值进入生产
+_WEAK_JWT_SECRETS = {"", "dev-secret-change-in-production", "your_jwt_secret_here"}
+if settings.JWT_SECRET in _WEAK_JWT_SECRETS or len(settings.JWT_SECRET) < 32:
+    raise RuntimeError(
+        "JWT_SECRET 配置不安全：请在 config/.env 中设置不少于 32 字符的强随机密钥"
+        f"（当前长度={len(settings.JWT_SECRET)}）。"
+    )

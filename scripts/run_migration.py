@@ -1,12 +1,14 @@
 """执行 v1.1 数据库迁移脚本"""
-import pymysql
+import sys
+from pathlib import Path
+
+# 允许从脚本目录直接导入 _db
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _db import get_connection
+
 
 def run_migration():
-    conn = pymysql.connect(
-        host='localhost', port=3306, user='root',
-        password='Lkj070329', database='complaint_agent',
-        charset='utf8mb4',
-    )
+    conn = get_connection()
     cursor = conn.cursor()
 
     with open('scripts/migration_v1.1.sql', 'r', encoding='utf-8') as f:
