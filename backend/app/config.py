@@ -21,13 +21,20 @@ class Settings:
     )
 
     DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
-    DASHSCOPE_API_KEY: str = os.getenv("DASHSCOPE_API_KEY", "")
+    # v2.0: 统一为 QWEN_API_KEY，DASHSCOPE_API_KEY 保留为别名向后兼容
+    QWEN_API_KEY: str = os.getenv("QWEN_API_KEY", "") or os.getenv("DASHSCOPE_API_KEY", "")
+    DASHSCOPE_API_KEY: str = QWEN_API_KEY  # 别名，保持旧代码可读
 
     LLM_PRIMARY: str = os.getenv("LLM_PRIMARY", "deepseek")
     LLM_FALLBACK: str = os.getenv("LLM_FALLBACK", "qwen")
     DEEPSEEK_BASE_URL: str = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
-    QWEN_BASE_URL: str = os.getenv("QWEN_BASE_URL", "https://aigw-nmhhht.cucloud.cn/v1")
+    QWEN_BASE_URL: str = os.getenv("QWEN_BASE_URL", "https://maas-api.cn-huabei-1.xf-yun.com/v2")
     LLM_TIMEOUT_SECONDS: int = int(os.getenv("LLM_TIMEOUT_SECONDS", "60"))
+
+    # v2.0: VLM 多模态大模型相关配置
+    VLM_ENABLED: str = os.getenv("VLM_ENABLED", "1")
+    VLM_TIMEOUT_SECONDS: int = int(os.getenv("VLM_TIMEOUT_SECONDS", "45"))
+    VLM_MAX_IMAGES: int = int(os.getenv("VLM_MAX_IMAGES", "3"))
 
     CHROMA_PERSIST_DIR: str = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma_db")
     EVIDENCE_BASE_DIR: str = os.getenv("EVIDENCE_BASE_DIR", "./data/evidence")

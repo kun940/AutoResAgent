@@ -12,6 +12,18 @@ from agent.multimodal.prompts import OCR_SYSTEM_PROMPT, OCR_USER_PROMPT_TEMPLATE
 
 logger = logging.getLogger(__name__)
 
+# v2.0: SN 码/型号/批次号正则规则（用于 extract_sn_info）
+SN_PATTERNS = [
+    r"(?:SN|S/?N|序列号|Serial\s*No\.?)[\s:：]*([A-Z0-9\-]{6,20})",
+    r"\b([A-Z]{2,3}\d{8,12})\b",  # 兜底：2-3字母+8-12数字
+]
+MODEL_PATTERNS = [
+    r"(?:型号|Model|M/?P)[\s:：]*([A-Z0-9\-]{3,30})",
+]
+BATCH_PATTERNS = [
+    r"(?:批次号?|Batch|Lot)[\s:：]*([A-Z0-9\-]{3,30})",
+]
+
 
 class OcrClient:
     """OCR识别 + 文本LLM推理客户端，替代视觉大模型"""
@@ -115,6 +127,57 @@ class OcrClient:
                     texts.append(line[1][0])  # (text, confidence)
 
         return "；".join(texts) if texts else ""
+
+    def extract_sn_info(self, images: list[dict]) -> dict:
+        """
+        v2.0: 仅用 PaddleOCR 提取图片中的结构化铭牌信息，不调用 LLM。
+
+        从所有图片的 OCR 文字中正则匹配 SN 码、型号、批次号。
+        OCR 不可用时返回全 None，不抛异常（确保 L1 主路径稳定）。
+
+        Returns:
+            {"sn_code": str|None, "model_info": str|None, "batch_no": str|None}
+        """
+        empty_result = {
+            "sn_code": None,
+            "model_info": None,
+            "batch_no": None,
+        }
+
+        ocr = self._get_ocr()
+        if ocr is None:
+            logger.info("OCR not available, SN info extraction skipped")
+            return empty_result
+
+        # 收集所有图片的 OCR 文字
+        all_texts = []
+        for img_data in images:
+            try:
+                text = self._ocr_extract(img_data, ocr)
+                if text:
+                    all_texts.append(text)
+            except Exception as e:
+                logger.warning(f"OCR extract failed for SN info: {e}")
+
+        if not all_texts:
+            return empty_result
+
+        combined_text = " ".join(all_texts)
+
+        return {
+            "sn_code": self._match_first(combined_text, SN_PATTERNS),
+            "model_info": self._match_first(combined_text, MODEL_PATTERNS),
+            "batch_no": self._match_first(combined_text, BATCH_PATTERNS),
+        }
+
+    @staticmethod
+    def _match_first(text: str, patterns: list[str]) -> Optional[str]:
+        """按 patterns 顺序匹配，返回首个命中结果"""
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+        return None
 
     def _parse_response(self, content: str) -> dict:
         """解析LLM返回的JSON"""
