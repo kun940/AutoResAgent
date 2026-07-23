@@ -44,18 +44,19 @@ class ExportDialog(QDialog):
 
         export_btn = QPushButton("导出")
         export_btn.setStyleSheet(
-            "QPushButton { background-color: #2196F3; color: #FFFFFF; border: none; "
-            "border-radius: 4px; padding: 8px 24px; font-weight: bold; font-size: 13px; }"
-            "QPushButton:hover { background-color: #1976D2; }"
+            "QPushButton { background-color: #1E2329; color: #FFFFFF; border: none; "
+            "border-radius: 6px; padding: 8px 24px; font-weight: 500; font-size: 13px; }"
+            "QPushButton:hover { background-color: #2A3038; }"
         )
         export_btn.clicked.connect(self._on_export)
         btn_layout.addWidget(export_btn)
 
         cancel_btn = QPushButton("取消")
+        cancel_btn.setProperty("secondary", True)
         cancel_btn.setStyleSheet(
-            "QPushButton { background-color: #BDC3C7; color: #2C3E50; border: none; "
-            "border-radius: 4px; padding: 8px 24px; font-size: 13px; }"
-            "QPushButton:hover { background-color: #AAB7B8; }"
+            "QPushButton { background-color: #FFFFFF; color: #5A6377; border: 1px solid #EAEDF2; "
+            "border-radius: 6px; padding: 8px 24px; font-size: 13px; }"
+            "QPushButton:hover { border-color: #C9A86A; color: #A8884A; }"
         )
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)

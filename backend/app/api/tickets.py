@@ -19,6 +19,7 @@ from backend.app.schemas.ticket import (
     TicketStatusUpdateRequest,
     TicketEscalateRequest,
     TicketReassignRequest,
+    ProcessingRecordResponse,
 )
 from backend.app.schemas.common import ApiResponse, PaginatedResponse
 from backend.app.services.ticket_service import TicketService
@@ -35,6 +36,43 @@ MAX_IMAGE_SIZE = 10 * 1024 * 1024
 
 # 批量操作单次最大数量
 BATCH_MAX_SIZE = 50
+
+
+# 处理记录：操作类型 -> 中文标签
+ACTION_LABEL_MAP = {
+    TicketAction.STATUS_CHANGE.value: "变更状态",
+    TicketAction.ESCALATION.value: "升级工单",
+    TicketAction.REASSIGN.value: "转派工单",
+}
+
+
+def _parse_log_detail(action: str, detail: Optional[str]) -> tuple[str, Optional[str]]:
+    """从 TicketLog.detail 解析出 (change_summary, reason)。
+
+    处理三种已知格式：
+      status_change: "状态变更：a → b，备注：xxx"  或  "状态变更：a → b"
+      escalation:    "紧急度升级：a → b，原因：xxx"
+      reassign:      "转派：a → b(role)，原因：xxx"
+    无法匹配时返回 (detail or "", None)。
+    """
+    if not detail:
+        return "", None
+
+    # 前缀 -> (前缀字符串, 原因分隔符)
+    prefixes = {
+        TicketAction.STATUS_CHANGE.value: ("状态变更：", "，备注："),
+        TicketAction.ESCALATION.value: ("紧急度升级：", "，原因："),
+        TicketAction.REASSIGN.value: ("转派：", "，原因："),
+    }
+    prefix, sep = prefixes.get(action, (None, None))
+    if prefix is None or not detail.startswith(prefix):
+        return detail, None
+
+    body = detail[len(prefix):]
+    if sep and sep in body:
+        change_summary, reason = body.split(sep, 1)
+        return change_summary, reason
+    return body, None
 
 
 # ===== 批量操作请求体 =====
@@ -205,6 +243,29 @@ async def export_tickets(
     current_user: User = Depends(get_current_user),
 ):
     """导出工单数据"""
+    # 中文映射表
+    _CATEGORY_MAP = {
+        "Missing_Parts": "配件缺失", "Operation_Error": "操作错误",
+        "Software_Bug": "软件缺陷", "Hardware_Malfunction": "硬件故障",
+        "Hardware_Thermal_Runaway": "热失控", "Electrical_Leakage": "漏电问题",
+        "Batch_Defect": "批次缺陷", "Safety_Hazard": "安全隐患", "Other": "其他",
+    }
+    _URGENCY_MAP = {
+        "High_Priority": "高紧急", "Medium_Priority": "中紧急", "Low_Priority": "低紧急",
+    }
+    _WARRANTY_MAP = {
+        "In_Warranty": "保内", "Out_of_Warranty": "保外", "Unknown": "未知",
+    }
+    _ROUTING_MAP = {
+        "frontline_staff_queue": "一线客服队列",
+        "department_manager_queue": "部门主管队列",
+        "general_manager_dashboard": "总经理看板",
+    }
+    _STATUS_MAP = {
+        "pending": "待处理", "processing": "处理中", "routed": "已路由",
+        "resolved": "已解决", "closed": "已关闭", "cancelled": "已取消",
+    }
+
     try:
         conditions = []
         if status:
@@ -235,24 +296,32 @@ async def export_tickets(
         # 数据行
         rows = []
         for t in tickets:
+            raw_status = t.status if isinstance(t.status, str) else t.status.value
             rows.append([
                 t.ticket_id or "",
                 t.customer_name or "",
                 t.customer_phone or "",
                 (t.raw_input or "")[:200],  # 截断过长内容
-                t.issue_category or "",
-                t.urgency_level or "",
-                t.warranty_status or "",
-                t.routing_decision or "",
-                t.status if isinstance(t.status, str) else t.status.value,
+                _CATEGORY_MAP.get(t.issue_category, t.issue_category or ""),
+                _URGENCY_MAP.get(t.urgency_level, t.urgency_level or ""),
+                _WARRANTY_MAP.get(t.warranty_status, t.warranty_status or ""),
+                _ROUTING_MAP.get(t.routing_decision, t.routing_decision or ""),
+                _STATUS_MAP.get(raw_status, raw_status),
                 t.created_at.strftime("%Y-%m-%d %H:%M:%S") if t.created_at else "",
                 t.resolved_at.strftime("%Y-%m-%d %H:%M:%S") if t.resolved_at else "",
             ])
 
         if format == "xlsx":
-            file_bytes = _export_xlsx(headers, rows)
-            media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            filename = "tickets_export.xlsx"
+            try:
+                file_bytes = _export_xlsx(headers, rows)
+            except ImportError:
+                # openpyxl 未安装，自动降级为 CSV
+                file_bytes = _export_csv(headers, rows)
+                media_type = "text/csv"
+                filename = "tickets_export.csv"
+            else:
+                media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                filename = "tickets_export.xlsx"
         else:
             file_bytes = _export_csv(headers, rows)
             media_type = "text/csv"
@@ -292,6 +361,7 @@ async def batch_reassign(
                     target_username=request.target_username,
                     target_role=request.target_role,
                     reason=request.reason,
+                    operator_id=current_user.id,
                 )
                 if ticket:
                     success_count += 1
@@ -349,6 +419,7 @@ async def batch_escalate(
                     ticket_id=ticket_id,
                     to_level=to_level,
                     reason=request.reason,
+                    operator_id=current_user.id,
                 )
                 if result:
                     success_count += 1
@@ -394,7 +465,7 @@ async def batch_close(
                 if current_status == TicketStatus.RESOLVED.value:
                     # resolved -> closed
                     result = await ticket_service.update_status(
-                        db=db, ticket_id=ticket_id, status=TicketStatus.CLOSED.value, note=request.reason,
+                        db=db, ticket_id=ticket_id, status=TicketStatus.CLOSED.value, note=request.reason, operator_id=current_user.id,
                     )
                     if result:
                         success_count += 1
@@ -403,11 +474,11 @@ async def batch_close(
                 elif current_status == TicketStatus.ROUTED.value:
                     # routed -> resolved -> closed
                     result1 = await ticket_service.update_status(
-                        db=db, ticket_id=ticket_id, status=TicketStatus.RESOLVED.value, note=request.reason,
+                        db=db, ticket_id=ticket_id, status=TicketStatus.RESOLVED.value, note=request.reason, operator_id=current_user.id,
                     )
                     if result1:
                         result2 = await ticket_service.update_status(
-                            db=db, ticket_id=ticket_id, status=TicketStatus.CLOSED.value, note=request.reason,
+                            db=db, ticket_id=ticket_id, status=TicketStatus.CLOSED.value, note=request.reason, operator_id=current_user.id,
                         )
                         if result2:
                             success_count += 1
@@ -430,6 +501,96 @@ async def batch_close(
     except Exception as e:
         logger.error(f"Batch close failed: {e}")
         return ApiResponse(code=1, message=str(e))
+
+
+# ===== v2.1 处理记录接口（固定路由，必须放在 /tickets/{ticket_id} 之前）=====
+
+@router.get("/tickets/processing-records", response_model=PaginatedResponse)
+async def get_processing_records(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    start_date: Optional[str] = Query(None, description="起始日期 YYYY-MM-DD"),
+    end_date: Optional[str] = Query(None, description="结束日期 YYYY-MM-DD"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取当前账号的工单处理记录（变更状态/升级/转派）"""
+    try:
+        # 日期解析
+        start_dt = None
+        end_dt = None
+        try:
+            if start_date:
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            if end_date:
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+        except ValueError:
+            return PaginatedResponse(code=1, message="日期格式需为 YYYY-MM-DD")
+
+        # 过滤条件
+        conditions = [
+            TicketLog.operator_id == current_user.id,
+            TicketLog.action.in_([
+                TicketAction.STATUS_CHANGE.value,
+                TicketAction.ESCALATION.value,
+                TicketAction.REASSIGN.value,
+            ]),
+        ]
+        if start_dt:
+            conditions.append(TicketLog.created_at >= start_dt)
+        if end_dt:
+            conditions.append(TicketLog.created_at < end_dt)
+
+        # 计数
+        count_stmt = (
+            select(func.count())
+            .select_from(TicketLog)
+            .join(Ticket, TicketLog.ticket_id == Ticket.ticket_id)
+            .where(*conditions)
+        )
+        count_result = await db.execute(count_stmt)
+        total = count_result.scalar() or 0
+
+        # 分页查询（关联工单与操作人）
+        stmt = (
+            select(TicketLog, Ticket, User)
+            .join(Ticket, TicketLog.ticket_id == Ticket.ticket_id)
+            .outerjoin(User, TicketLog.operator_id == User.id)
+            .where(*conditions)
+            .order_by(TicketLog.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        result = await db.execute(stmt)
+        rows = list(result.all())
+
+        records = []
+        for log, ticket, operator in rows:
+            change_summary, reason = _parse_log_detail(log.action, log.detail)
+            raw_status = ticket.status if isinstance(ticket.status, str) else (
+                ticket.status.value if ticket.status else None
+            )
+            records.append(ProcessingRecordResponse(
+                log_id=log.id,
+                action=log.action,
+                action_label=ACTION_LABEL_MAP.get(log.action, log.action or ""),
+                ticket_id=log.ticket_id,
+                ticket_customer_name=ticket.customer_name,
+                ticket_issue_category=ticket.issue_category,
+                ticket_urgency_level=ticket.urgency_level,
+                ticket_status=raw_status,
+                operator_id=log.operator_id,
+                operator_username=operator.username if operator else None,
+                change_summary=change_summary,
+                reason=reason,
+                detail_raw=log.detail,
+                created_at=log.created_at,
+            ).model_dump())
+
+        return PaginatedResponse(total=total, page=page, page_size=page_size, data=records)
+    except Exception as e:
+        logger.error(f"Get processing records failed: {e}")
+        return PaginatedResponse(code=1, message=str(e))
 
 
 # ===== 工单详情/操作接口（参数化路由，必须放在固定路由之后）=====
@@ -471,6 +632,7 @@ async def update_ticket_status(
             ticket_id=ticket_id,
             status=request.status,
             note=request.note,
+            operator_id=current_user.id,
         )
         if not ticket:
             return ApiResponse(code=1, message=f"工单 {ticket_id} 不存在")
@@ -495,6 +657,7 @@ async def escalate_ticket(
             ticket_id=ticket_id,
             to_level=request.to_level,
             reason=request.reason,
+            operator_id=current_user.id,
         )
         if not ticket:
             return ApiResponse(code=1, message=f"工单 {ticket_id} 不存在")
@@ -518,6 +681,7 @@ async def reassign_ticket(
             target_username=request.target_username,
             target_role=request.target_role,
             reason=request.reason,
+            operator_id=current_user.id,
         )
         if not ticket:
             return ApiResponse(code=1, message=f"工单 {ticket_id} 不存在")

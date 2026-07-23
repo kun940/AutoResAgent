@@ -86,7 +86,7 @@ class SubmitComplaintView(QWidget):
         layout.setSpacing(16)
 
         title = QLabel("提交客诉信息")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2C3E50;")
+        title.setStyleSheet("font-size: 18px; font-weight: 600; color: #1E2329;")
         layout.addWidget(title)
 
         self.name_input = QLineEdit()
@@ -111,12 +111,13 @@ class SubmitComplaintView(QWidget):
         image_row.setSpacing(12)
 
         self.image_btn = QPushButton("选择图片")
+        self.image_btn.setProperty("secondary", True)
         self.image_btn.setFixedHeight(40)
         self.image_btn.clicked.connect(self._on_select_images)
         image_row.addWidget(self.image_btn)
 
         self.image_count_label = QLabel("已选择 0 张图片")
-        self.image_count_label.setStyleSheet("color: #7F8C8D; font-size: 13px;")
+        self.image_count_label.setStyleSheet("color: #8A94A6; font-size: 13px;")
         self.image_count_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         image_row.addWidget(self.image_count_label, 1)
 
@@ -125,10 +126,10 @@ class SubmitComplaintView(QWidget):
         self.submit_btn = QPushButton("提交客诉")
         self.submit_btn.setFixedHeight(48)
         self.submit_btn.setStyleSheet(
-            "QPushButton { background-color: #3498DB; color: #FFFFFF; border: none; "
-            "border-radius: 4px; font-size: 16px; font-weight: bold; }"
-            "QPushButton:hover { background-color: #2980B9; }"
-            "QPushButton:disabled { background-color: #BDC3C7; color: #ECF0F1; }"
+            "QPushButton { background-color: #1E2329; color: #FFFFFF; border: none; "
+            "border-radius: 6px; font-size: 16px; font-weight: 600; }"
+            "QPushButton:hover { background-color: #2A3038; }"
+            "QPushButton:disabled { background-color: #D0D5DD; color: #FFFFFF; }"
         )
         self.submit_btn.clicked.connect(self._on_submit)
         layout.addWidget(self.submit_btn)
@@ -148,7 +149,7 @@ class SubmitComplaintView(QWidget):
         self.result_layout.setSpacing(16)
 
         self.result_title = QLabel("提交结果")
-        self.result_title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2C3E50;")
+        self.result_title.setStyleSheet("font-size: 18px; font-weight: 600; color: #1E2329;")
         self.result_layout.addWidget(self.result_title)
 
         self.empty_hint = QLabel("请填写左侧表单并提交客诉，结果将在此处展示")
@@ -219,8 +220,8 @@ class SubmitComplaintView(QWidget):
         self._reply_text.setMinimumHeight(120)
         self._reply_text.setMaximumHeight(200)
         self._reply_text.setStyleSheet(
-            "QTextEdit { background-color: #F8F9FA; border: 1px solid #E0E0E0; "
-            "border-radius: 4px; padding: 10px; color: #2C3E50; font-size: 13px; }"
+            "QTextEdit { background-color: #FAFBFC; border: 1px solid #EAEDF2; "
+            "border-radius: 6px; padding: 10px; color: #1E2329; font-size: 13px; }"
         )
         self._reply_layout.addWidget(self._reply_text)
         self._reply_group.setVisible(False)

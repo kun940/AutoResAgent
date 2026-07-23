@@ -179,6 +179,7 @@ class TicketService:
         ticket_id: str,
         status: str,
         note: Optional[str] = None,
+        operator_id: Optional[int] = None,
     ) -> Optional[Ticket]:
         ticket = await self.get_ticket(db, ticket_id)
         if not ticket:
@@ -198,6 +199,7 @@ class TicketService:
         log = TicketLog(
             ticket_id=ticket_id,
             action=TicketAction.STATUS_CHANGE,
+            operator_id=operator_id,
             detail=f"状态变更：{current_status.value} → {new_status.value}" + (f"，备注：{note}" if note else ""),
         )
         db.add(log)
@@ -223,6 +225,7 @@ class TicketService:
         ticket_id: str,
         to_level: str,
         reason: str,
+        operator_id: Optional[int] = None,
     ) -> Optional[Ticket]:
         ticket = await self.get_ticket(db, ticket_id)
         if not ticket:
@@ -247,6 +250,7 @@ class TicketService:
         log = TicketLog(
             ticket_id=ticket_id,
             action=TicketAction.ESCALATION,
+            operator_id=operator_id,
             detail=f"紧急度升级：{old_level} → {to_level}，原因：{reason}",
         )
         db.add(log)
@@ -260,6 +264,7 @@ class TicketService:
         target_username: str,
         target_role: str,
         reason: str,
+        operator_id: Optional[int] = None,
     ) -> Optional[Ticket]:
         ticket = await self.get_ticket(db, ticket_id)
         if not ticket:
@@ -290,6 +295,7 @@ class TicketService:
         log = TicketLog(
             ticket_id=ticket_id,
             action=TicketAction.REASSIGN,
+            operator_id=operator_id,
             detail=f"转派：{old_assignee} → {target_user.username}({target_user.role})，原因：{reason}",
         )
         db.add(log)

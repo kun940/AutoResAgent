@@ -65,6 +65,34 @@ ROLE_OPTIONS = {
     "管理员": "admin",
 }
 
+IMPACT_MAP = {
+    "No_Impact": "无影响",
+    "Minor_Inconvenience": "轻微不便",
+    "Functional_Loss": "功能丧失",
+    "Production_Down": "生产停滞",
+    "Safety_Hazard": "安全隐患",
+    "Group_Risk": "集团风险",
+}
+
+WARRANTY_MAP = {
+    "In_Warranty": "保内",
+    "Out_of_Warranty": "保外",
+    "Unknown": "未知",
+}
+
+ROUTING_MAP = {
+    "frontline_staff_queue": "一线客服队列",
+    "department_manager_queue": "部门主管队列",
+    "general_manager_dashboard": "总经理看板",
+}
+
+ACTION_TYPE_MAP = {
+    "Auto_Reply": "自动回复",
+    "Routed": "已路由",
+    "Manual_Resolved": "人工解决",
+    "Escalated": "已升级",
+}
+
 
 class LoadTicketsThread(QThread):
     finished = pyqtSignal(object)
@@ -517,9 +545,9 @@ class TicketListView(QWidget):
 
         self.export_btn = QPushButton("导出")
         self.export_btn.setStyleSheet(
-            "QPushButton { background-color: #2196F3; color: #FFFFFF; border: none; "
-            "border-radius: 4px; padding: 6px 16px; font-weight: bold; font-size: 13px; }"
-            "QPushButton:hover { background-color: #1976D2; }"
+            "QPushButton { background-color: #1E2329; color: #FFFFFF; border: none; "
+            "border-radius: 6px; padding: 6px 16px; font-weight: 500; font-size: 13px; }"
+            "QPushButton:hover { background-color: #2A3038; }"
         )
         self.export_btn.clicked.connect(self._on_export)
         filter_layout.addWidget(self.export_btn)
@@ -537,33 +565,33 @@ class TicketListView(QWidget):
         batch_layout.addWidget(QLabel("批量操作："))
         self.batch_reassign_btn = QPushButton("批量转派")
         self.batch_reassign_btn.setStyleSheet(
-            "QPushButton { background-color: #9B59B6; color: #FFFFFF; border: none; "
-            "border-radius: 4px; padding: 6px 12px; font-weight: bold; font-size: 12px; }"
-            "QPushButton:hover { background-color: #8E44AD; }"
+            "QPushButton { background-color: #1E2329; color: #FFFFFF; border: none; "
+            "border-radius: 6px; padding: 6px 12px; font-weight: 500; font-size: 12px; }"
+            "QPushButton:hover { background-color: #2A3038; }"
         )
         self.batch_reassign_btn.clicked.connect(self._on_batch_reassign)
         batch_layout.addWidget(self.batch_reassign_btn)
 
         self.batch_escalate_btn = QPushButton("批量升级")
         self.batch_escalate_btn.setStyleSheet(
-            "QPushButton { background-color: #FF9800; color: #FFFFFF; border: none; "
-            "border-radius: 4px; padding: 6px 12px; font-weight: bold; font-size: 12px; }"
-            "QPushButton:hover { background-color: #F57C00; }"
+            "QPushButton { background-color: #C77D3C; color: #FFFFFF; border: none; "
+            "border-radius: 6px; padding: 6px 12px; font-weight: 500; font-size: 12px; }"
+            "QPushButton:hover { background-color: #B56E32; }"
         )
         self.batch_escalate_btn.clicked.connect(self._on_batch_escalate)
         batch_layout.addWidget(self.batch_escalate_btn)
 
         self.batch_close_btn = QPushButton("批量关闭")
         self.batch_close_btn.setStyleSheet(
-            "QPushButton { background-color: #E53935; color: #FFFFFF; border: none; "
-            "border-radius: 4px; padding: 6px 12px; font-weight: bold; font-size: 12px; }"
-            "QPushButton:hover { background-color: #C62828; }"
+            "QPushButton { background-color: #A8423A; color: #FFFFFF; border: none; "
+            "border-radius: 6px; padding: 6px 12px; font-weight: 500; font-size: 12px; }"
+            "QPushButton:hover { background-color: #973A33; }"
         )
         self.batch_close_btn.clicked.connect(self._on_batch_close)
         batch_layout.addWidget(self.batch_close_btn)
 
         self.selected_count_label = QLabel("已选 0 项")
-        self.selected_count_label.setStyleSheet("color: #7F8C8D; font-size: 12px; padding-left: 8px;")
+        self.selected_count_label.setStyleSheet("color: #8A94A6; font-size: 12px; padding-left: 8px;")
         batch_layout.addWidget(self.selected_count_label)
 
         batch_layout.addStretch()
@@ -605,7 +633,7 @@ class TicketListView(QWidget):
 
         page_layout = QHBoxLayout()
         self.total_label = QLabel("共 0 条记录")
-        self.total_label.setStyleSheet("color: #7F8C8D; font-size: 13px;")
+        self.total_label.setStyleSheet("color: #8A94A6; font-size: 13px;")
         page_layout.addWidget(self.total_label)
         page_layout.addStretch()
 
@@ -614,7 +642,7 @@ class TicketListView(QWidget):
         page_layout.addWidget(self.prev_btn)
 
         self.page_label = QLabel("第 1 / 1 页")
-        self.page_label.setStyleSheet("color: #2C3E50; font-size: 13px; padding: 0 12px;")
+        self.page_label.setStyleSheet("color: #1E2329; font-size: 13px; padding: 0 12px;")
         page_layout.addWidget(self.page_label)
 
         self.next_btn = QPushButton("下一页")
@@ -666,8 +694,15 @@ class TicketListView(QWidget):
         self.d_order = QLabel("-")
         self.d_model = QLabel("-")
         self.d_batch = QLabel("-")
-        self.d_fault = QLabel("-")
-        self.d_fault.setWordWrap(True)
+        self.d_fault = QTextEdit()
+        self.d_fault.setReadOnly(True)
+        self.d_fault.setPlainText("-")
+        self.d_fault.setMinimumHeight(60)
+        self.d_fault.setMaximumHeight(120)
+        self.d_fault.setStyleSheet(
+            "QTextEdit { background-color: #FAFBFC; border: 1px solid #EAEDF2; "
+            "border-radius: 6px; padding: 8px; font-size: 12px; }"
+        )
         form3.addRow("订单号：", self.d_order)
         form3.addRow("产品型号：", self.d_model)
         form3.addRow("批次号：", self.d_batch)
@@ -705,8 +740,8 @@ class TicketListView(QWidget):
         self.d_reply.setReadOnly(True)
         self.d_reply.setMaximumHeight(100)
         self.d_reply.setStyleSheet(
-            "QTextEdit { background-color: #F8F9FA; border: 1px solid #E0E0E0; "
-            "border-radius: 4px; padding: 8px; font-size: 12px; }"
+            "QTextEdit { background-color: #FAFBFC; border: 1px solid #EAEDF2; "
+            "border-radius: 6px; padding: 8px; font-size: 12px; }"
         )
         reply_layout.addWidget(self.d_reply)
         self.detail_reply.setVisible(False)
@@ -725,27 +760,27 @@ class TicketListView(QWidget):
         self.action_layout = QHBoxLayout()
         self.btn_change_status = QPushButton("变更状态")
         self.btn_change_status.setStyleSheet(
-            "QPushButton { background-color: #3498DB; color: #FFFFFF; border: none; "
-            "border-radius: 4px; padding: 8px 16px; font-weight: bold; font-size: 13px; }"
-            "QPushButton:hover { background-color: #2980B9; }"
+            "QPushButton { background-color: #1E2329; color: #FFFFFF; border: none; "
+            "border-radius: 6px; padding: 8px 16px; font-weight: 500; font-size: 13px; }"
+            "QPushButton:hover { background-color: #2A3038; }"
         )
         self.btn_change_status.clicked.connect(self._on_change_status)
         self.action_layout.addWidget(self.btn_change_status)
 
         self.btn_escalate = QPushButton("升级工单")
         self.btn_escalate.setStyleSheet(
-            "QPushButton { background-color: #FF9800; color: #FFFFFF; border: none; "
-            "border-radius: 4px; padding: 8px 16px; font-weight: bold; font-size: 13px; }"
-            "QPushButton:hover { background-color: #F57C00; }"
+            "QPushButton { background-color: #C77D3C; color: #FFFFFF; border: none; "
+            "border-radius: 6px; padding: 8px 16px; font-weight: 500; font-size: 13px; }"
+            "QPushButton:hover { background-color: #B56E32; }"
         )
         self.btn_escalate.clicked.connect(self._on_escalate)
         self.action_layout.addWidget(self.btn_escalate)
 
         self.btn_reassign = QPushButton("转派工单")
         self.btn_reassign.setStyleSheet(
-            "QPushButton { background-color: #9B59B6; color: #FFFFFF; border: none; "
-            "border-radius: 4px; padding: 8px 16px; font-weight: bold; font-size: 13px; }"
-            "QPushButton:hover { background-color: #8E44AD; }"
+            "QPushButton { background-color: #1E2329; color: #FFFFFF; border: none; "
+            "border-radius: 6px; padding: 8px 16px; font-weight: 500; font-size: 13px; }"
+            "QPushButton:hover { background-color: #2A3038; }"
         )
         self.btn_reassign.clicked.connect(self._on_reassign)
         self.action_layout.addWidget(self.btn_reassign)
@@ -909,15 +944,18 @@ class TicketListView(QWidget):
         self.d_order.setText(extracted.get("order_id") or "-")
         self.d_model.setText(extracted.get("model_number") or "-")
         self.d_batch.setText(extracted.get("batch_code") or "-")
-        self.d_fault.setText(extracted.get("core_fault_desc") or "-")
+        self.d_fault.setPlainText(extracted.get("core_fault_desc") or "-")
 
         assessment = ticket.get("agent_business_assessment") or {}
         self.d_category.setText(CATEGORY_MAP.get(assessment.get("issue_category"), assessment.get("issue_category") or "-"))
-        self.d_impact.setText(assessment.get("business_impact") or "-")
-        self.d_warranty.setText(assessment.get("warranty_status") or "-")
+        self.d_impact.setText(IMPACT_MAP.get(assessment.get("business_impact"), assessment.get("business_impact") or "-"))
+        self.d_warranty.setText(WARRANTY_MAP.get(assessment.get("warranty_status"), assessment.get("warranty_status") or "-"))
 
-        self.d_routing.setText(str(ticket.get("routing_decision") or "-"))
-        self.d_sop.setText(str(ticket.get("sop_applied") or "-"))
+        routing = ticket.get("routing_decision") or "-"
+        self.d_routing.setText(ROUTING_MAP.get(routing, routing) if routing != "-" else "-")
+
+        sop = ticket.get("sop_applied") or "-"
+        self.d_sop.setText(ACTION_TYPE_MAP.get(sop, sop) if sop != "-" else "-")
 
         reply = ticket.get("auto_reply_sent") or ""
         self.d_reply.setPlainText(str(reply) if reply else "（无自动回复）")

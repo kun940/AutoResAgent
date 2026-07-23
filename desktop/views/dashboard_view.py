@@ -38,6 +38,21 @@ STATUS_LABELS = {
 
 ROLE_HIERARCHY = ["frontline_staff", "department_manager", "general_manager"]
 
+
+class PlaceholderPage(QWidget):
+    """页面占位组件（仅在 MainWindow 初始化时使用，随后会被实际视图替换）"""
+
+    def __init__(self, title="", parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        label = QLabel(title)
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setStyleSheet("font-size: 16px; color: #8A94A6;")
+        layout.addWidget(label)
+        layout.addStretch()
+
+
 class CollapsibleSection(QWidget):
     """可折叠的区域组件"""
 
@@ -53,10 +68,10 @@ class CollapsibleSection(QWidget):
         # 标题按钮
         self.toggle_btn = QPushButton(f"  ▼  {title}")
         self.toggle_btn.setStyleSheet(
-            "QPushButton { background-color: #ECF0F1; border: 1px solid #D5DBDB; "
-            "border-radius: 4px; padding: 8px 12px; font-size: 14px; font-weight: bold; "
-            "color: #2C3E50; text-align: left; }"
-            "QPushButton:hover { background-color: #D5DBDB; }"
+            "QPushButton { background-color: #F0F2F5; border: 1px solid #EAEDF2; "
+            "border-radius: 6px; padding: 8px 12px; font-size: 14px; font-weight: 600; "
+            "color: #1E2329; text-align: left; }"
+            "QPushButton:hover { background-color: #E8EAEE; }"
         )
         self.toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.toggle_btn.clicked.connect(self._toggle)
@@ -67,7 +82,7 @@ class CollapsibleSection(QWidget):
         self.content_layout = QVBoxLayout(self.content_area)
         self.content_layout.setContentsMargins(12, 8, 12, 8)
         self.content_layout.setSpacing(4)
-        self.content_area.setStyleSheet("border: 1px solid #D5DBDB; border-top: none; border-radius: 0 0 4px 4px;")
+        self.content_area.setStyleSheet("border: 1px solid #EAEDF2; border-top: none; border-radius: 0 0 6px 6px; background-color: #FFFFFF;")
         outer_layout.addWidget(self.content_area)
 
     def _toggle(self):
@@ -124,13 +139,13 @@ class QualityDashboardLoadThread(QThread):
 
 
 class StatCard(QWidget):
-    def __init__(self, icon, title, value="0", color="#2C3E50", parent=None):
+    def __init__(self, icon, title, value="0", color="#1E2329", parent=None):
         super().__init__(parent)
         self.setStyleSheet(
-            "QWidget { background-color: #FFFFFF; border: 1px solid #E0E0E0; "
-            "border-radius: 8px; }"
+            "QWidget { background-color: #FFFFFF; border: 1px solid #EAEDF2; "
+            "border-radius: 10px; }"
         )
-        self.setMinimumHeight(100)
+        self.setMinimumHeight(110)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         layout = QVBoxLayout(self)
@@ -139,13 +154,13 @@ class StatCard(QWidget):
 
         top_row = QHBoxLayout()
         icon_label = QLabel(icon)
-        icon_label.setStyleSheet("font-size: 24px; border: none; background: transparent;")
+        icon_label.setStyleSheet("font-size: 22px; border: none; background: transparent;")
         top_row.addWidget(icon_label)
 
         self.value_label = QLabel(str(value))
         self.value_label.setStyleSheet(
-            f"font-size: 24px; font-weight: bold; color: {color}; "
-            "border: none; background: transparent;"
+            f"font-size: 26px; font-weight: 600; color: {color}; "
+            "border: none; background: transparent; font-family: 'JetBrains Mono', 'Consolas', monospace;"
         )
         top_row.addStretch()
         top_row.addWidget(self.value_label)
@@ -153,7 +168,7 @@ class StatCard(QWidget):
 
         self.title_label = QLabel(title)
         self.title_label.setStyleSheet(
-            "font-size: 13px; color: #7F8C8D; border: none; background: transparent;"
+            "font-size: 13px; color: #8A94A6; border: none; background: transparent;"
         )
         layout.addWidget(self.title_label)
 
@@ -179,18 +194,24 @@ class DashboardView(QWidget):
 
         header_layout = QHBoxLayout()
         title = QLabel("主看板")
-        title.setStyleSheet("font-size: 20px; font-weight: bold; color: #2C3E50;")
+        title.setObjectName("page_title")
         header_layout.addWidget(title)
+
+        subtitle = QLabel("欢迎回来，以下是今日数据概览")
+        subtitle.setObjectName("page_subtitle")
+        subtitle.setContentsMargins(8, 0, 0, 0)
+        header_layout.addWidget(subtitle)
         header_layout.addStretch()
 
         self.refresh_btn = QPushButton("刷新")
+        self.refresh_btn.setProperty("secondary", True)
         self.refresh_btn.setFixedSize(80, 36)
         self.refresh_btn.clicked.connect(self._load_data)
         header_layout.addWidget(self.refresh_btn)
         main_layout.addLayout(header_layout)
 
         self.loading_label = QLabel("加载中...")
-        self.loading_label.setStyleSheet("color: #3498DB; font-size: 14px;")
+        self.loading_label.setStyleSheet("color: #C9A86A; font-size: 14px;")
         self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.loading_label.setVisible(False)
         main_layout.addWidget(self.loading_label)
@@ -198,10 +219,10 @@ class DashboardView(QWidget):
         cards_layout = QHBoxLayout()
         cards_layout.setSpacing(16)
 
-        self.card_total = StatCard("📊", "工单总数", "0", "#2C3E50")
-        self.card_pending = StatCard("⏳", "待处理", "0", "#FF9800")
-        self.card_high = StatCard("🔥", "高紧急", "0", "#FF4444")
-        self.card_overdue = StatCard("⚠️", "已超时(SLA)", "0", "#E53935")
+        self.card_total = StatCard("📊", "工单总数", "0", "#1E2329")
+        self.card_pending = StatCard("⏳", "待处理", "0", "#C77D3C")
+        self.card_high = StatCard("🔥", "高紧急", "0", "#A8423A")
+        self.card_overdue = StatCard("⚠️", "已超时(SLA)", "0", "#A8423A")
 
         cards_layout.addWidget(self.card_total)
         cards_layout.addWidget(self.card_pending)
@@ -408,7 +429,7 @@ class DashboardView(QWidget):
             name = CATEGORY_MAP.get(key, key)
             name_label = QLabel(name)
             name_label.setFixedWidth(80)
-            name_label.setStyleSheet("font-size: 13px; color: #2C3E50;")
+            name_label.setStyleSheet("font-size: 13px; color: #1E2329;")
             row.addWidget(name_label)
 
             bar = QProgressBar()
@@ -417,15 +438,15 @@ class DashboardView(QWidget):
             bar.setTextVisible(False)
             bar.setFixedHeight(18)
             bar.setStyleSheet(
-                "QProgressBar { background-color: #F0F0F0; border: none; border-radius: 9px; }"
-                "QProgressBar::chunk { background-color: #3498DB; border-radius: 9px; }"
+                "QProgressBar { background-color: #F0F2F5; border: none; border-radius: 9px; }"
+                "QProgressBar::chunk { background-color: #C9A86A; border-radius: 9px; }"
             )
             row.addWidget(bar, 1)
 
             count_label = QLabel(str(count))
             count_label.setFixedWidth(40)
             count_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            count_label.setStyleSheet("font-size: 13px; color: #2C3E50; font-weight: bold;")
+            count_label.setStyleSheet("font-size: 13px; color: #1E2329; font-weight: 600;")
             row.addWidget(count_label)
 
             self.category_layout.addLayout(row)
@@ -455,7 +476,7 @@ class DashboardView(QWidget):
 
             date_label = QLabel(display_date)
             date_label.setFixedWidth(60)
-            date_label.setStyleSheet("font-size: 13px; color: #2C3E50;")
+            date_label.setStyleSheet("font-size: 13px; color: #1E2329;")
             row.addWidget(date_label)
 
             bar = QProgressBar()
@@ -464,15 +485,15 @@ class DashboardView(QWidget):
             bar.setTextVisible(False)
             bar.setFixedHeight(18)
             bar.setStyleSheet(
-                "QProgressBar { background-color: #F0F0F0; border: none; border-radius: 9px; }"
-                "QProgressBar::chunk { background-color: #4CAF50; border-radius: 9px; }"
+                "QProgressBar { background-color: #F0F2F5; border: none; border-radius: 9px; }"
+                "QProgressBar::chunk { background-color: #C9A86A; border-radius: 9px; }"
             )
             row.addWidget(bar, 1)
 
             count_label = QLabel(str(count))
             count_label.setFixedWidth(40)
             count_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            count_label.setStyleSheet("font-size: 13px; color: #2C3E50; font-weight: bold;")
+            count_label.setStyleSheet("font-size: 13px; color: #1E2329; font-weight: 600;")
             row.addWidget(count_label)
 
             self.trend_layout.addLayout(row)
@@ -483,7 +504,7 @@ class DashboardView(QWidget):
             self.overdue_label.setText(
                 f"当前有 {overdue_count} 个工单超过SLA时限，请在工单列表中查看详情"
             )
-            self.overdue_label.setStyleSheet("color: #E53935; font-size: 13px; padding: 8px; font-weight: bold;")
+            self.overdue_label.setStyleSheet("color: #A8423A; font-size: 13px; padding: 8px; font-weight: 600;")
         else:
             self.overdue_label.setText("暂无超时工单")
-            self.overdue_label.setStyleSheet("color: #7F8C8D; font-size: 13px; padding: 8px;")
+            self.overdue_label.setStyleSheet("color: #8A94A6; font-size: 13px; padding: 8px;")

@@ -77,3 +77,23 @@ class TicketReassignRequest(BaseModel):
     target_username: str
     target_role: str
     reason: str
+
+
+class ProcessingRecordResponse(BaseModel):
+    """工单处理记录响应（当前账号的状态变更/升级/转派操作记录）"""
+    model_config = ConfigDict(from_attributes=True)
+
+    log_id: int
+    action: str
+    action_label: str
+    ticket_id: str
+    ticket_customer_name: Optional[str] = None
+    ticket_issue_category: Optional[str] = None
+    ticket_urgency_level: Optional[str] = None
+    ticket_status: Optional[str] = None
+    operator_id: Optional[int] = None
+    operator_username: Optional[str] = None
+    change_summary: str
+    reason: Optional[str] = None
+    detail_raw: Optional[str] = None
+    created_at: Optional[datetime] = None

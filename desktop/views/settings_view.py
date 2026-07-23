@@ -2,17 +2,15 @@ import os
 import json
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QSpinBox, QGroupBox, QFormLayout, QCheckBox,
-    QMessageBox, QSizePolicy
+    QMessageBox
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 
 from desktop.api_client import ApiClient
 
 
-PROJECT_ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
-ENV_PATH = os.path.join(PROJECT_ROOT, "config", ".env")
 CONFIG_JSON_PATH = os.path.join(os.path.dirname(__file__), "..", "config.json")
 
 
@@ -32,12 +30,7 @@ class SettingsView(QWidget):
     def __init__(self, api_client: ApiClient, parent=None):
         super().__init__(parent)
         self.api_client = api_client
-        self._deepseek_visible = False
-        self._dashscope_visible = False
-        self._deepseek_key = ""
-        self._dashscope_key = ""
         self._setup_ui()
-        self._load_env_config()
         self._load_local_config()
         self._test_connection()
 
@@ -47,11 +40,10 @@ class SettingsView(QWidget):
         main_layout.setSpacing(20)
 
         title = QLabel("系统设置")
-        title.setStyleSheet("font-size: 20px; font-weight: bold; color: #2C3E50;")
+        title.setObjectName("page_title")
         main_layout.addWidget(title)
 
         self._build_connection_group(main_layout)
-        self._build_api_group(main_layout)
         self._build_notification_group(main_layout)
         self._build_about_group(main_layout)
         main_layout.addStretch()
@@ -62,7 +54,7 @@ class SettingsView(QWidget):
         form.setSpacing(12)
 
         self.url_label = QLabel(self.api_client.base_url)
-        self.url_label.setStyleSheet("color: #2C3E50; font-weight: bold;")
+        self.url_label.setStyleSheet("color: #1E2329; font-weight: 600;")
         form.addRow("后端地址：", self.url_label)
 
         status_row = QHBoxLayout()
@@ -71,7 +63,7 @@ class SettingsView(QWidget):
         status_row.addWidget(self.status_dot)
 
         self.status_text = QLabel("检测中...")
-        self.status_text.setStyleSheet("color: #7F8C8D; font-size: 13px;")
+        self.status_text.setStyleSheet("color: #8A94A6; font-size: 13px;")
         status_row.addWidget(self.status_text)
         status_row.addStretch()
 
@@ -81,48 +73,6 @@ class SettingsView(QWidget):
         status_row.addWidget(self.test_btn)
 
         form.addRow("连接状态：", status_row)
-        parent_layout.addWidget(group)
-
-    def _build_api_group(self, parent_layout):
-        group = QGroupBox("API配置")
-        form = QFormLayout(group)
-        form.setSpacing(12)
-
-        deepseek_row = QHBoxLayout()
-        self.deepseek_input = QLineEdit()
-        self.deepseek_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.deepseek_input.setPlaceholderText("sk-****xxxx")
-        deepseek_row.addWidget(self.deepseek_input, 1)
-
-        self.deepseek_toggle = QPushButton("显示")
-        self.deepseek_toggle.setFixedWidth(60)
-        self.deepseek_toggle.clicked.connect(lambda: self._toggle_key_visibility("deepseek"))
-        deepseek_row.addWidget(self.deepseek_toggle)
-        form.addRow("DeepSeek API Key：", deepseek_row)
-
-        dashscope_row = QHBoxLayout()
-        self.dashscope_input = QLineEdit()
-        self.dashscope_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.dashscope_input.setPlaceholderText("sk-****xxxx")
-        dashscope_row.addWidget(self.dashscope_input, 1)
-
-        self.dashscope_toggle = QPushButton("显示")
-        self.dashscope_toggle.setFixedWidth(60)
-        self.dashscope_toggle.clicked.connect(lambda: self._toggle_key_visibility("dashscope"))
-        dashscope_row.addWidget(self.dashscope_toggle)
-        form.addRow("DashScope API Key：", dashscope_row)
-
-        self.timeout_spin = QSpinBox()
-        self.timeout_spin.setRange(10, 300)
-        self.timeout_spin.setSingleStep(10)
-        self.timeout_spin.setSuffix(" 秒")
-        form.addRow("LLM超时时间：", self.timeout_spin)
-
-        self.save_api_btn = QPushButton("保存配置")
-        self.save_api_btn.setFixedWidth(120)
-        self.save_api_btn.clicked.connect(self._save_env_config)
-        form.addRow("", self.save_api_btn)
-
         parent_layout.addWidget(group)
 
     def _build_notification_group(self, parent_layout):
@@ -180,123 +130,13 @@ class SettingsView(QWidget):
     def _on_health_result(self, is_healthy):
         self.test_btn.setEnabled(True)
         if is_healthy:
-            self.status_dot.setStyleSheet("color: #4CAF50; font-size: 16px;")
+            self.status_dot.setStyleSheet("color: #3A7D5F; font-size: 16px;")
             self.status_text.setText("已连接")
-            self.status_text.setStyleSheet("color: #4CAF50; font-size: 13px; font-weight: bold;")
+            self.status_text.setStyleSheet("color: #3A7D5F; font-size: 13px; font-weight: 600;")
         else:
-            self.status_dot.setStyleSheet("color: #FF4444; font-size: 16px;")
+            self.status_dot.setStyleSheet("color: #A8423A; font-size: 16px;")
             self.status_text.setText("未连接")
-            self.status_text.setStyleSheet("color: #FF4444; font-size: 13px; font-weight: bold;")
-
-    def _toggle_key_visibility(self, key_name):
-        if key_name == "deepseek":
-            self._deepseek_visible = not self._deepseek_visible
-            if self._deepseek_visible:
-                self.deepseek_input.setEchoMode(QLineEdit.EchoMode.Normal)
-                self.deepseek_toggle.setText("隐藏")
-            else:
-                self.deepseek_input.setEchoMode(QLineEdit.EchoMode.Password)
-                self.deepseek_toggle.setText("显示")
-        elif key_name == "dashscope":
-            self._dashscope_visible = not self._dashscope_visible
-            if self._dashscope_visible:
-                self.dashscope_input.setEchoMode(QLineEdit.EchoMode.Normal)
-                self.dashscope_toggle.setText("隐藏")
-            else:
-                self.dashscope_input.setEchoMode(QLineEdit.EchoMode.Password)
-                self.dashscope_toggle.setText("显示")
-
-    def _mask_key(self, key):
-        if not key or len(key) < 8:
-            return key
-        return key[:3] + "****" + key[-4:]
-
-    def _load_env_config(self):
-        try:
-            if not os.path.isfile(ENV_PATH):
-                return
-            with open(ENV_PATH, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-
-            env_dict = {}
-            for line in lines:
-                line = line.strip()
-                if "=" in line and not line.startswith("#"):
-                    key, _, value = line.partition("=")
-                    env_dict[key.strip()] = value.strip()
-
-            self._deepseek_key = env_dict.get("DEEPSEEK_API_KEY", "")
-            self._dashscope_key = env_dict.get("DASHSCOPE_API_KEY", "")
-
-            self.deepseek_input.setText(self._deepseek_key)
-            self.dashscope_input.setText(self._dashscope_key)
-
-            timeout = env_dict.get("LLM_TIMEOUT_SECONDS", "60")
-            try:
-                self.timeout_spin.setValue(int(timeout))
-            except ValueError:
-                self.timeout_spin.setValue(60)
-
-        except Exception:
-            pass
-
-    def _save_env_config(self):
-        try:
-            env_dict = {}
-            if os.path.isfile(ENV_PATH):
-                with open(ENV_PATH, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if "=" in line and not line.startswith("#"):
-                            key, _, value = line.partition("=")
-                            env_dict[key.strip()] = value.strip()
-
-            new_deepseek = self.deepseek_input.text().strip()
-            new_dashscope = self.dashscope_input.text().strip()
-            new_timeout = str(self.timeout_spin.value())
-
-            env_dict["DEEPSEEK_API_KEY"] = new_deepseek
-            env_dict["DASHSCOPE_API_KEY"] = new_dashscope
-            env_dict["LLM_TIMEOUT_SECONDS"] = new_timeout
-
-            if os.path.isfile(ENV_PATH):
-                with open(ENV_PATH, "r", encoding="utf-8") as f:
-                    lines = f.readlines()
-
-                updated_keys = set()
-                new_lines = []
-                for line in lines:
-                    stripped = line.strip()
-                    if "=" in stripped and not stripped.startswith("#"):
-                        key = stripped.split("=", 1)[0].strip()
-                        if key in ("DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY", "LLM_TIMEOUT_SECONDS"):
-                            new_lines.append(f"{key}={env_dict[key]}\n")
-                            updated_keys.add(key)
-                        else:
-                            new_lines.append(line)
-                    else:
-                        new_lines.append(line)
-
-                for key in ("DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY", "LLM_TIMEOUT_SECONDS"):
-                    if key not in updated_keys:
-                        new_lines.append(f"{key}={env_dict[key]}\n")
-
-                with open(ENV_PATH, "w", encoding="utf-8") as f:
-                    f.writelines(new_lines)
-            else:
-                os.makedirs(os.path.dirname(ENV_PATH), exist_ok=True)
-                with open(ENV_PATH, "w", encoding="utf-8") as f:
-                    f.write(f"DEEPSEEK_API_KEY={new_deepseek}\n")
-                    f.write(f"DASHSCOPE_API_KEY={new_dashscope}\n")
-                    f.write(f"LLM_TIMEOUT_SECONDS={new_timeout}\n")
-
-            self._deepseek_key = new_deepseek
-            self._dashscope_key = new_dashscope
-
-            QMessageBox.information(self, "保存成功", "配置已保存，部分配置需重启后端生效")
-
-        except Exception as e:
-            QMessageBox.warning(self, "保存失败", f"保存配置时出错：{str(e)}")
+            self.status_text.setStyleSheet("color: #A8423A; font-size: 13px; font-weight: 600;")
 
     def _load_local_config(self):
         try:

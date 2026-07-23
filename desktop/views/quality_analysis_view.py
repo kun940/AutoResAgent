@@ -93,13 +93,13 @@ class ExportReportThread(QThread):
 class StatCard(QWidget):
     """统计卡片组件"""
 
-    def __init__(self, icon, title, value="0", color="#2C3E50", parent=None):
+    def __init__(self, icon, title, value="0", color="#1E2329", parent=None):
         super().__init__(parent)
         self.setStyleSheet(
-            "QWidget { background-color: #FFFFFF; border: 1px solid #E0E0E0; "
-            "border-radius: 8px; }"
+            "QWidget { background-color: #FFFFFF; border: 1px solid #EAEDF2; "
+            "border-radius: 10px; }"
         )
-        self.setMinimumHeight(100)
+        self.setMinimumHeight(110)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         layout = QVBoxLayout(self)
@@ -108,13 +108,13 @@ class StatCard(QWidget):
 
         top_row = QHBoxLayout()
         icon_label = QLabel(icon)
-        icon_label.setStyleSheet("font-size: 24px; border: none; background: transparent;")
+        icon_label.setStyleSheet("font-size: 22px; border: none; background: transparent;")
         top_row.addWidget(icon_label)
 
         self.value_label = QLabel(str(value))
         self.value_label.setStyleSheet(
-            f"font-size: 24px; font-weight: bold; color: {color}; "
-            "border: none; background: transparent;"
+            f"font-size: 26px; font-weight: 600; color: {color}; "
+            "border: none; background: transparent; font-family: 'JetBrains Mono', 'Consolas', monospace;"
         )
         top_row.addStretch()
         top_row.addWidget(self.value_label)
@@ -122,7 +122,7 @@ class StatCard(QWidget):
 
         self.title_label = QLabel(title)
         self.title_label.setStyleSheet(
-            "font-size: 13px; color: #7F8C8D; border: none; background: transparent;"
+            "font-size: 13px; color: #8A94A6; border: none; background: transparent;"
         )
         layout.addWidget(self.title_label)
 
@@ -164,7 +164,7 @@ class QualityAnalysisView(QWidget):
         # 顶部标题栏
         header_layout = QHBoxLayout()
         title = QLabel("质量分析看板")
-        title.setStyleSheet("font-size: 20px; font-weight: bold; color: #2C3E50;")
+        title.setObjectName("page_title")
         header_layout.addWidget(title)
         header_layout.addStretch()
         main_layout.addLayout(header_layout)
@@ -210,10 +210,10 @@ class QualityAnalysisView(QWidget):
         cards_layout = QHBoxLayout()
         cards_layout.setSpacing(16)
 
-        self.card_total_tickets = StatCard("📋", "投诉总量", "0", "#2C3E50")
-        self.card_total_archived = StatCard("📦", "归档总量", "0", "#3498DB")
-        self.card_high_urgency = StatCard("🔥", "高紧急率", "0%", "#FF4444")
-        self.card_archive_rate = StatCard("✅", "归档完整率", "0%", "#4CAF50")
+        self.card_total_tickets = StatCard("📋", "投诉总量", "0", "#1E2329")
+        self.card_total_archived = StatCard("📦", "归档总量", "0", "#1E2329")
+        self.card_high_urgency = StatCard("🔥", "高紧急率", "0%", "#A8423A")
+        self.card_archive_rate = StatCard("✅", "归档完整率", "0%", "#3A7D5F")
 
         cards_layout.addWidget(self.card_total_tickets)
         cards_layout.addWidget(self.card_total_archived)
@@ -232,19 +232,21 @@ class QualityAnalysisView(QWidget):
         bottom_layout.addStretch()
 
         self.export_xlsx_btn = QPushButton("导出Excel报表")
+        self.export_xlsx_btn.setProperty("success", True)
         self.export_xlsx_btn.setStyleSheet(
-            "QPushButton { background-color: #27AE60; color: #FFFFFF; border: none; "
-            "border-radius: 4px; padding: 8px 20px; font-weight: bold; font-size: 13px; }"
-            "QPushButton:hover { background-color: #219A52; }"
+            "QPushButton { background-color: #3A7D5F; color: #FFFFFF; border: none; "
+            "border-radius: 6px; padding: 8px 20px; font-weight: 500; font-size: 13px; }"
+            "QPushButton:hover { background-color: #336D52; }"
         )
         self.export_xlsx_btn.clicked.connect(lambda: self._on_export("xlsx"))
         bottom_layout.addWidget(self.export_xlsx_btn)
 
         self.export_csv_btn = QPushButton("导出CSV报表")
+        self.export_csv_btn.setProperty("secondary", True)
         self.export_csv_btn.setStyleSheet(
-            "QPushButton { background-color: #3498DB; color: #FFFFFF; border: none; "
-            "border-radius: 4px; padding: 8px 20px; font-weight: bold; font-size: 13px; }"
-            "QPushButton:hover { background-color: #2980B9; }"
+            "QPushButton { background-color: #FFFFFF; color: #1E2329; border: 1px solid #EAEDF2; "
+            "border-radius: 6px; padding: 8px 20px; font-weight: 500; font-size: 13px; }"
+            "QPushButton:hover { border-color: #C9A86A; }"
         )
         self.export_csv_btn.clicked.connect(lambda: self._on_export("csv"))
         bottom_layout.addWidget(self.export_csv_btn)

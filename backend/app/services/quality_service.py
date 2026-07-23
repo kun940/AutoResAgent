@@ -273,6 +273,24 @@ class QualityService:
             "解决天数", "归档完整性", "追溯日期",
         ]
 
+        # 中文映射表
+        _CATEGORY_MAP = {
+            "Missing_Parts": "配件缺失", "Operation_Error": "操作错误",
+            "Software_Bug": "软件缺陷", "Hardware_Malfunction": "硬件故障",
+            "Hardware_Thermal_Runaway": "热失控", "Electrical_Leakage": "漏电问题",
+            "Batch_Defect": "批次缺陷", "Safety_Hazard": "安全隐患", "Other": "其他",
+        }
+        _URGENCY_MAP = {
+            "High_Priority": "高紧急", "Medium_Priority": "中紧急", "Low_Priority": "低紧急",
+        }
+        _ACTION_MAP = {
+            "Auto_Reply": "自动回复", "Routed": "已路由",
+            "Manual_Resolved": "人工解决", "Escalated": "已升级",
+        }
+        _WARRANTY_MAP = {
+            "In_Warranty": "保内", "Out_of_Warranty": "保外", "Unknown": "未知",
+        }
+
         # 数据行
         rows = []
         for r in records:
@@ -280,10 +298,10 @@ class QualityService:
                 r.ticket_id or "",
                 r.model_number or "",
                 r.batch_code or "",
-                r.issue_category or "",
-                r.urgency_level or "",
-                r.order_type or "",
-                r.warranty_status or "",
+                _CATEGORY_MAP.get(r.issue_category, r.issue_category or ""),
+                _URGENCY_MAP.get(r.urgency_level, r.urgency_level or ""),
+                _ACTION_MAP.get(r.order_type, r.order_type or ""),
+                _WARRANTY_MAP.get(r.warranty_status, r.warranty_status or ""),
                 str(r.resolution_days) if r.resolution_days is not None else "",
                 "完整" if r.archive_complete == 1 else "部分缺失",
                 r.trace_date.strftime("%Y-%m-%d") if r.trace_date else "",
@@ -291,7 +309,11 @@ class QualityService:
 
         # 根据格式生成文件
         if query.format == "xlsx":
-            return self._export_xlsx(headers, rows)
+            try:
+                return self._export_xlsx(headers, rows)
+            except ImportError:
+                # openpyxl 未安装，自动降级为 CSV
+                return self._export_csv(headers, rows)
         else:
             return self._export_csv(headers, rows)
 

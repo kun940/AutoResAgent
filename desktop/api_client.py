@@ -65,6 +65,21 @@ class ApiClient:
         except Exception:
             return None
 
+    def get_processing_records(self, page=1, page_size=20, start_date=None, end_date=None):
+        """获取当前账号的工单处理记录（变更状态/升级/转派）"""
+        try:
+            url = f"{self.base_url}/tickets/processing-records"
+            params = {"page": page, "page_size": page_size}
+            if start_date:
+                params["start_date"] = start_date
+            if end_date:
+                params["end_date"] = end_date
+            resp = requests.get(url, params=params, headers=self._auth_headers(), timeout=self.timeout)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception:
+            return None
+
     def update_ticket_status(self, ticket_id, status, note=None):
         try:
             url = f"{self.base_url}/tickets/{ticket_id}/status"
