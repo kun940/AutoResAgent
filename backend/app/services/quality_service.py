@@ -198,10 +198,13 @@ class QualityService:
         trend_result = await db.execute(trend_stmt)
         trend_rows = trend_result.all()
 
+        # daily: {日期 -> 投诉数量}，供前端趋势图直接消费
+        daily = {r.date: r.ticket_count for r in trend_rows}
         trend = {
             "dates": [r.date for r in trend_rows],
             "ticket_counts": [r.ticket_count for r in trend_rows],
             "archived_counts": [r.archived_count for r in trend_rows],
+            "daily": daily,
         }
 
         # 3. TOP5型号
@@ -213,7 +216,7 @@ class QualityService:
             top_models_stmt = top_models_stmt.where(*conditions)
         top_models_result = await db.execute(top_models_stmt)
         top_models = [
-            {"model_number": r.model_number or "未知", "count": r.count}
+            {"model_number": r.model_number or "未知", "ticket_count": r.count}
             for r in top_models_result.all()
         ]
 

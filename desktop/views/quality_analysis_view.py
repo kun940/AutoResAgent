@@ -139,6 +139,8 @@ class ChartCanvas(FigureCanvas):
         super().__init__(self.fig)
         self.setParent(parent)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        # 设最小高度，防止在布局中被压扁成扁平"长条"
+        self.setMinimumHeight(240)
 
 
 class QualityAnalysisView(QWidget):
@@ -459,7 +461,8 @@ class QualityAnalysisView(QWidget):
 
         daily = trend.get("daily", {})
         if not daily:
-            ax.text(0.5, 0.5, "暂无趋势数据", ha="center", va="center", fontsize=12, color="#BDC3C7")
+            ax.text(0.5, 0.5, "暂无趋势数据", ha="center", va="center",
+                    fontsize=12, color="#BDC3C7", transform=ax.transAxes)
             ax.set_xticks([])
             ax.set_yticks([])
         else:
@@ -471,10 +474,32 @@ class QualityAnalysisView(QWidget):
                 parts = d.split("-")
                 short_dates.append(f"{parts[1]}-{parts[2]}" if len(parts) == 3 else d)
 
-            ax.bar(short_dates, values, color="#3498DB", alpha=0.8)
+            # 柱宽自适应：数据少时收窄，避免粗柱连成一片"长条"
+            n = len(short_dates)
+            bar_width = 0.5 if n <= 7 else (0.7 if n <= 15 else 0.85)
+            bars = ax.bar(short_dates, values, width=bar_width,
+                          color="#3498DB", alpha=0.85, edgecolor="#2E86C1", linewidth=0.5)
+
+            # 柱顶标注数值
+            for bar, v in zip(bars, values):
+                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                        str(v), ha="center", va="bottom", fontsize=8, color="#1E2329")
+
             ax.set_xlabel("日期", fontsize=10)
             ax.set_ylabel("投诉数量", fontsize=10)
+            ax.set_ylim(0, max(values) + 1)
+
             ax.tick_params(axis="x", rotation=45, labelsize=8)
+            # 数据点多时间隔显示标签，避免重叠
+            if n > 12:
+                for i, label in enumerate(ax.get_xticklabels()):
+                    label.set_visible(i % 2 == 0)
+
+            # 浅色网格 + 去除多余边框，让柱子分立更清晰
+            ax.yaxis.grid(True, linestyle="--", alpha=0.3)
+            ax.set_axisbelow(True)
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
 
         self.trend_canvas.fig.tight_layout()
         self.trend_canvas.draw()
@@ -504,19 +529,45 @@ class QualityAnalysisView(QWidget):
         ax = self.model_canvas.fig.add_subplot(111)
 
         if not top_models:
-            ax.text(0.5, 0.5, "暂无数据", ha="center", va="center", fontsize=12, color="#BDC3C7")
+            ax.text(0.5, 0.5, "暂无数据", ha="center", va="center",
+                    fontsize=12, color="#BDC3C7", transform=ax.transAxes)
             ax.set_xticks([])
             ax.set_yticks([])
-        else:
-            # 取前10名
-            models = top_models[:10]
-            names = [m.get("model_number", "-") for m in reversed(models)]
-            counts = [m.get("ticket_count", 0) for m in reversed(models)]
-            ax.barh(names, counts, color="#E74C3C", alpha=0.8)
-            ax.set_xlabel("投诉数量", fontsize=10)
-            ax.tick_params(axis="y", labelsize=9)
+            self.model_canvas.fig.tight_layout()
+            self.model_canvas.draw()
+            return
+
+        # 取前10名
+        models = top_models[:10]
+        names = [m.get("model_number", "-") for m in reversed(models)]
+        counts = [m.get("ticket_count", 0) for m in reversed(models)]
+
+        bars = ax.barh(names, counts, color="#E74C3C", alpha=0.85,
+                       edgecolor="#B03A2E", linewidth=0.5)
+
+        # 柱子末端标注数值
+        max_count = max(counts) if counts else 0
+        for bar, v in zip(bars, counts):
+            ax.text(bar.get_width() + max_count * 0.02,
+                    bar.get_y() + bar.get_height() / 2,
+                    str(v), ha="left", va="center", fontsize=9, color="#1E2329")
+
+        ax.set_xlabel("投诉数量", fontsize=10)
+        # 留出右侧空间给数值标注，避免柱子/数字被截断
+        ax.set_xlim(0, max_count * 1.15 if max_count > 0 else 1)
+        ax.tick_params(axis="y", labelsize=9)
+
+        # 浅色网格 + 去除多余边框
+        ax.xaxis.grid(True, linestyle="--", alpha=0.3)
+        ax.set_axisbelow(True)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
 
         self.model_canvas.fig.tight_layout()
+        # 动态左边距：型号名越长留越多空间，避免名称被截断导致"显示不完整"
+        max_name_len = max(len(str(n)) for n in names) if names else 0
+        left_margin = min(0.45, 0.08 + max_name_len * 0.015)
+        self.model_canvas.fig.subplots_adjust(left=left_margin)
         self.model_canvas.draw()
 
     def _update_category_chart(self, distribution):
