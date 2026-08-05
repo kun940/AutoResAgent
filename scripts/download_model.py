@@ -20,9 +20,9 @@ huggingface_hub.file_download._create_symlink = _patched_create_symlink
 
 from sentence_transformers import SentenceTransformer
 
-print("Downloading text2vec-base-chinese...")
+print("正在下载text2vec-base-chinese...")
 model = SentenceTransformer("shibing624/text2vec-base-chinese")
-print("Model loaded successfully!")
+print("模型下载成功!")
 
 test_embedding = model.encode(["测试文本"])
 print(f"Embedding dimension: {test_embedding.shape[1]}")

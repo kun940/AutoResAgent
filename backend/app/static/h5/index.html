@@ -56,11 +56,19 @@
 
             <div class="form-section">
                 <van-field
+                    v-model="customerName"
+                    label="姓名"
+                    placeholder="请输入您的姓名"
+                    maxlength="20"
+                    required
+                ></van-field>
+                <van-field
                     v-model="phone"
-                    label="联系电话"
+                    label="手机号"
                     type="tel"
-                    placeholder="选填，方便我们联系您"
+                    placeholder="请输入手机号，方便我们联系您"
                     maxlength="11"
+                    required
                 ></van-field>
             </div>
 
@@ -113,6 +121,7 @@
             data() {
                 return {
                     complaintText: '',
+                    customerName: '',
                     phone: '',
                     fileList: [],
                     submitting: false,
@@ -159,7 +168,15 @@
                         vant.showToast('问题描述至少10个字');
                         return;
                     }
-                    if (this.phone && !/^1[3-9]\d{9}$/.test(this.phone)) {
+                    if (!this.customerName.trim()) {
+                        vant.showToast('请输入姓名');
+                        return;
+                    }
+                    if (!this.phone) {
+                        vant.showToast('请输入手机号');
+                        return;
+                    }
+                    if (!/^1[3-9]\d{9}$/.test(this.phone)) {
                         vant.showToast('请输入正确的手机号');
                         return;
                     }
@@ -167,9 +184,8 @@
                     this.submitting = true;
                     const formData = new FormData();
                     formData.append('text', text);
-                    if (this.phone) {
-                        formData.append('customer_phone', this.phone);
-                    }
+                    formData.append('customer_name', this.customerName.trim());
+                    formData.append('customer_phone', this.phone);
 
                     for (let i = 0; i < this.fileList.length; i++) {
                         const blob = this.compressedBlobs[i] || (this.fileList[i] && this.fileList[i].file);
