@@ -30,15 +30,19 @@ class ResponderAgent:
 
     async def generate_reply(self, extracted_data: dict, assessment: dict, image_analysis: dict = None) -> dict:
         urgency_level = assessment.get("urgency_level", "Medium_Priority")
+        issue_category = assessment.get("issue_category")
         fault_desc = extracted_data.get("core_fault_desc", "")
 
         sop_content = ""
         sop_title = ""
         try:
             if self.retriever is not None:
+                # v1.4: 传入 issue_category 进行分类精确匹配，
+                # 避免批次缺陷客诉被匹配到漏电SOP等跨分类问题
                 sop_results = self.retriever.retrieve_sop(
                     fault_desc,
                     urgency_level=urgency_level,
+                    issue_category=issue_category,
                     top_k=2,
                     prefer_emergency=(urgency_level == "High_Priority"),
                 )
