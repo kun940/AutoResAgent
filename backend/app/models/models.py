@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from typing import Optional, List
 
-from sqlalchemy import String, Text, Integer, BigInteger, DateTime, Date, JSON, Enum as SQLEnum, SmallInteger, ForeignKey, Index
+from sqlalchemy import String, Text, Integer, BigInteger, DateTime, Date, JSON, Enum as SQLEnum, SmallInteger, ForeignKey, Index, Numeric, DECIMAL
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.mysql import TINYINT
 
@@ -47,6 +47,8 @@ class Ticket(Base):
     routing_decision: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     auto_reply_sent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     sop_applied: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    # v1.3: 图片分析结果(含damage_detected/damage_level/fault_types_found/has_emergency_indicators/overall_assessment/suggestion/analysis_source/image_count)
+    image_analysis: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(30), default=TicketStatus.PENDING)
     assigned_to: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=datetime.now)
@@ -89,6 +91,10 @@ class SopKnowledge(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     urgency_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     keywords: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # v1.3: 紧急止损动作列表
+    emergency_actions: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    # v1.3: 适用场景标签
+    scenario_tags: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     is_active: Mapped[int] = mapped_column(SmallInteger, default=1)
     version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=datetime.now)
@@ -178,3 +184,40 @@ class TicketLog(Base):
 
     ticket = relationship("Ticket", back_populates="logs")
     operator = relationship("User", back_populates="ticket_logs")
+
+
+# v1.2: ServiceOrder 模型已删除（出单模块移除）
+
+
+class QualityTraceIndex(Base):
+    """质量追溯索引模型 - 用于批次/型号维度的质量分析（v1.2: 解除去单外键依赖）"""
+    __tablename__ = "quality_trace_index"
+    __table_args__ = (
+        Index("idx_qti_ticket_id", "ticket_id"),
+        Index("idx_qti_model_number", "model_number"),
+        Index("idx_qti_batch_code", "batch_code"),
+        Index("idx_qti_issue_category", "issue_category"),
+        Index("idx_qti_trace_date", "trace_date"),
+        Index("idx_qti_model_batch", "model_number", "batch_code"),
+        Index("idx_qti_model_date", "model_number", "trace_date"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[str] = mapped_column(String(50), ForeignKey("tickets.ticket_id"), nullable=False)
+    # v1.2: order_id 保留字段（历史数据兼容），不再有外键约束，新数据为 NULL
+    order_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    model_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    batch_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    issue_category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    urgency_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # v1.2: 语义变更为「处理动作类型」Auto_Reply/Routed/Manual_Resolved/Escalated
+    order_type: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    warranty_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    resolution_days: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
+    satisfaction_rating: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    # v1.2 新增：归档完整性标记 1=完整 0=部分缺失
+    archive_complete: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=1)
+    trace_date: Mapped[date] = mapped_column(Date, nullable=False)
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=datetime.now)
+
+    ticket = relationship("Ticket")

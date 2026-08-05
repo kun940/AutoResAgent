@@ -15,6 +15,10 @@
         .header-title { font-size: 17px; font-weight: 600; letter-spacing: 1px; }
         .content { padding-top: 50px; }
         .search-area { padding: 12px 12px 0; }
+        .search-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #fff; }
+        .search-row .van-search { flex: 1; padding: 0; }
+        .search-btn { flex-shrink: 0; height: 32px; padding: 0 16px; border: none; border-radius: 16px; background: #1989FA; color: #fff; font-size: 14px; cursor: pointer; }
+        .search-btn:active { background: #1577D8; }
         .card { margin: 12px; border-radius: 8px; overflow: hidden; }
         .ticket-id { font-size: 18px; font-weight: 700; color: #333; }
         .ticket-id-copy { font-size: 12px; color: #1989FA; margin-left: 8px; cursor: pointer; }
@@ -38,15 +42,15 @@
 
         <div class="content">
             <div class="search-area">
-                <van-search
-                    v-model="searchValue"
-                    placeholder="请输入工单号，如 CS-20260527-001"
-                    show-action
-                    action-text="查询"
-                    @search="onSearch"
-                    @cancel="onSearch"
-                    :loading="searching"
-                ></van-search>
+                <div class="search-row">
+                    <van-search
+                        v-model="searchValue"
+                        placeholder="请输入工单号，如 CS-20260527-001"
+                        @search="onSearch"
+                        :loading="searching"
+                    ></van-search>
+                    <button class="search-btn" @click="onSearch" type="button">查询</button>
+                </div>
             </div>
 
             <template v-if="ticketData">
@@ -115,13 +119,6 @@
             throw new Error(json.message || '查询失败');
         }
 
-        function formatDateTime(isoStr) {
-            if (!isoStr) return '-';
-            const d = new Date(isoStr);
-            const pad = n => String(n).padStart(2, '0');
-            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-        }
-
         const app = Vue.createApp({
             data() {
                 return {
@@ -155,6 +152,12 @@
                 }
             },
             methods: {
+                formatDateTime(isoStr) {
+                    if (!isoStr) return '-';
+                    const d = new Date(isoStr);
+                    const pad = n => String(n).padStart(2, '0');
+                    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                },
                 async onSearch() {
                     const ticketId = this.searchValue.trim();
                     if (!ticketId) {

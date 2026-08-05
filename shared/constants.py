@@ -21,6 +21,7 @@ class UserRole(str, Enum):
     FRONTLINE_STAFF = "frontline_staff"
     DEPARTMENT_MANAGER = "department_manager"
     GENERAL_MANAGER = "general_manager"
+    QC_STAFF = "qc_staff"
 
 
 class IssueCategory(str, Enum):
@@ -61,6 +62,8 @@ class NotificationType(str, Enum):
     ESCALATION = "escalation"
     SLA_WARNING = "sla_warning"
     REASSIGN = "reassign"
+    # ORDER_CREATED 保留用于历史日志兼容，v1.2 不再产生新值
+    ORDER_CREATED = "order_created"
 
 
 class TicketAction(str, Enum):
@@ -68,6 +71,8 @@ class TicketAction(str, Enum):
     ESCALATION = "escalation"
     REASSIGN = "reassign"
     NOTE = "note"
+    # ORDER_CREATED 保留用于历史日志兼容，v1.2 不再产生新值
+    ORDER_CREATED = "order_created"
 
 
 TICKET_STATUS_TRANSITIONS = {
@@ -95,3 +100,18 @@ MANUAL_ESCALATION_PERMISSIONS = {
     UserRole.DEPARTMENT_MANAGER: [UrgencyLevel.HIGH],
     UserRole.ADMIN: [UrgencyLevel.LOW, UrgencyLevel.MEDIUM, UrgencyLevel.HIGH],
 }
+
+
+# ============================================================
+# v1.2: 出单相关常量已删除（OrderType/OrderStatus/OrderTicketStatus/
+#        ORDER_TYPE_PREFIX/ORDER_TYPE_LABELS/ORDER_STATUS_TRANSITIONS/
+#        DEFAULT_ORDER_MAPPING）。质量追溯表的 order_type 字段语义
+#        已变更为「处理动作类型」，见下方 ACTION_TYPE 定义。
+# ============================================================
+
+class ActionType(str, Enum):
+    """工单处理动作类型（v1.2 质量追溯 order_type 字段新语义）"""
+    AUTO_REPLY = "Auto_Reply"
+    ROUTED = "Routed"
+    MANUAL_RESOLVED = "Manual_Resolved"
+    ESCALATED = "Escalated"

@@ -1,12 +1,48 @@
 [project]
 name = "AutoRes_Agent"
-version = "1.0.0"
-description = "客诉自动回复出单智能体"
+version = "1.2.0"
+description = "基于大模型Agent的客诉自动回复、智能定级、工单归档与质量追溯系统"
 requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "sqlalchemy>=2.0.0",
+    "aiomysql>=0.2.0",
+    "alembic>=1.12.0",
+    "pydantic>=2.5.0",
+    "python-multipart>=0.0.6",
+    "python-jose[cryptography]>=3.3.0",
+    "bcrypt>=4.0.0",
+    "aiofiles>=23.2.0",
+    "langchain>=0.1.0",
+    "langchain-community>=0.0.10",
+    "langchain-core>=0.1.0",
+    "langchain-openai>=0.1.0",
+    "openai>=1.6.0",
+    "dashscope>=1.20.0",
+    "chromadb>=0.4.0",
+    "sentence-transformers>=2.2.0",
+    "Pillow>=10.0.0",
+    "PyQt6>=6.6.0",
+    "PyQt6-Qt6>=6.6.0",
+    "requests>=2.31.0",
+    "matplotlib>=3.8.0",
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.25.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "python-dotenv>=1.0.0",
+    "openpyxl>=3.1.0",
+]
 
 [tool.black]
 line-length = 120
 target-version = ["py310"]
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+default = true
 
 [tool.isort]
 profile = "black"

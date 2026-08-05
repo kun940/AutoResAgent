@@ -122,7 +122,7 @@ async def customer_submit(
     status = result.get("status", "routed")
     category = result.get("issue_category", "Other")
 
-    return ApiResponse(data={
+    response_data = {
         "ticket_id": result["ticket_id"],
         "urgency_level": urgency,
         "urgency_label": URGENCY_LABELS.get(urgency, urgency),
@@ -132,7 +132,9 @@ async def customer_submit(
         "issue_category_label": CATEGORY_LABELS.get(category, category),
         "auto_reply": result.get("auto_reply_sent", ""),
         "created_at": created_at,
-    })
+    }
+
+    return ApiResponse(data=response_data)
 
 
 @router.get("/ticket/{ticket_id}", response_model=ApiResponse)

@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (
     QGroupBox, QProgressBar, QSizePolicy, QFrame, QScrollArea
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QParallelAnimationGroup, QPropertyAnimation
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QColor
 
 from desktop.api_client import ApiClient
 
@@ -38,6 +38,20 @@ STATUS_LABELS = {
 ROLE_HIERARCHY = ["frontline_staff", "department_manager", "general_manager"]
 
 
+class PlaceholderPage(QWidget):
+    """页面占位组件（仅在 MainWindow 初始化时使用，随后会被实际视图替换）"""
+
+    def __init__(self, title="", parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        label = QLabel(title)
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setStyleSheet("font-size: 16px; color: #8A94A6;")
+        layout.addWidget(label)
+        layout.addStretch()
+
+
 class CollapsibleSection(QWidget):
     """可折叠的区域组件"""
 
@@ -53,10 +67,10 @@ class CollapsibleSection(QWidget):
         # 标题按钮
         self.toggle_btn = QPushButton(f"  ▼  {title}")
         self.toggle_btn.setStyleSheet(
-            "QPushButton { background-color: #ECF0F1; border: 1px solid #D5DBDB; "
-            "border-radius: 4px; padding: 8px 12px; font-size: 14px; font-weight: bold; "
-            "color: #2C3E50; text-align: left; }"
-            "QPushButton:hover { background-color: #D5DBDB; }"
+            "QPushButton { background-color: #F0F2F5; border: 1px solid #EAEDF2; "
+            "border-radius: 6px; padding: 8px 12px; font-size: 14px; font-weight: 600; "
+            "color: #1E2329; text-align: left; }"
+            "QPushButton:hover { background-color: #E8EAEE; }"
         )
         self.toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.toggle_btn.clicked.connect(self._toggle)
@@ -67,7 +81,7 @@ class CollapsibleSection(QWidget):
         self.content_layout = QVBoxLayout(self.content_area)
         self.content_layout.setContentsMargins(12, 8, 12, 8)
         self.content_layout.setSpacing(4)
-        self.content_area.setStyleSheet("border: 1px solid #D5DBDB; border-top: none; border-radius: 0 0 4px 4px;")
+        self.content_area.setStyleSheet("border: 1px solid #EAEDF2; border-top: none; border-radius: 0 0 6px 6px; background-color: #FFFFFF;")
         outer_layout.addWidget(self.content_area)
 
     def _toggle(self):
@@ -109,14 +123,28 @@ class SubordinateLoadThread(QThread):
         self.finished.emit(result)
 
 
+class QualityDashboardLoadThread(QThread):
+    """质量看板数据加载线程（v1.2: 出单统计已移除，保留线程供后续扩展）"""
+    finished = pyqtSignal(object)
+
+    def __init__(self, api_client, target_role=None):
+        super().__init__()
+        self.api_client = api_client
+        self.target_role = target_role
+
+    def run(self):
+        result = self.api_client.get_dashboard_quality(target_role=self.target_role)
+        self.finished.emit(result)
+
+
 class StatCard(QWidget):
-    def __init__(self, icon, title, value="0", color="#2C3E50", parent=None):
+    def __init__(self, icon, title, value="0", color="#1E2329", parent=None):
         super().__init__(parent)
         self.setStyleSheet(
-            "QWidget { background-color: #FFFFFF; border: 1px solid #E0E0E0; "
-            "border-radius: 8px; }"
+            "QWidget { background-color: #FFFFFF; border: 1px solid #EAEDF2; "
+            "border-radius: 10px; }"
         )
-        self.setMinimumHeight(100)
+        self.setMinimumHeight(110)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         layout = QVBoxLayout(self)
@@ -125,13 +153,13 @@ class StatCard(QWidget):
 
         top_row = QHBoxLayout()
         icon_label = QLabel(icon)
-        icon_label.setStyleSheet("font-size: 24px; border: none; background: transparent;")
+        icon_label.setStyleSheet("font-size: 22px; border: none; background: transparent;")
         top_row.addWidget(icon_label)
 
         self.value_label = QLabel(str(value))
         self.value_label.setStyleSheet(
-            f"font-size: 24px; font-weight: bold; color: {color}; "
-            "border: none; background: transparent;"
+            f"font-size: 26px; font-weight: 600; color: {color}; "
+            "border: none; background: transparent; font-family: 'JetBrains Mono', 'Consolas', monospace;"
         )
         top_row.addStretch()
         top_row.addWidget(self.value_label)
@@ -139,7 +167,7 @@ class StatCard(QWidget):
 
         self.title_label = QLabel(title)
         self.title_label.setStyleSheet(
-            "font-size: 13px; color: #7F8C8D; border: none; background: transparent;"
+            "font-size: 13px; color: #8A94A6; border: none; background: transparent;"
         )
         layout.addWidget(self.title_label)
 
@@ -154,6 +182,11 @@ class DashboardView(QWidget):
         self._role = role
         self._load_thread = None
         self._sub_thread = None
+        self._quality_thread = None
+        # 缓存下级工单汇总数据，供"查看详情"对话框使用
+        self._sub_data = None
+        # 持有详情对话框引用，防止被 Python GC 回收导致窗口闪退
+        self._detail_dialog = None
         self._setup_ui()
         self._load_data()
 
@@ -164,18 +197,24 @@ class DashboardView(QWidget):
 
         header_layout = QHBoxLayout()
         title = QLabel("主看板")
-        title.setStyleSheet("font-size: 20px; font-weight: bold; color: #2C3E50;")
+        title.setObjectName("page_title")
         header_layout.addWidget(title)
+
+        subtitle = QLabel("欢迎回来，以下是今日数据概览")
+        subtitle.setObjectName("page_subtitle")
+        subtitle.setContentsMargins(8, 0, 0, 0)
+        header_layout.addWidget(subtitle)
         header_layout.addStretch()
 
         self.refresh_btn = QPushButton("刷新")
+        self.refresh_btn.setProperty("secondary", True)
         self.refresh_btn.setFixedSize(80, 36)
         self.refresh_btn.clicked.connect(self._load_data)
         header_layout.addWidget(self.refresh_btn)
         main_layout.addLayout(header_layout)
 
         self.loading_label = QLabel("加载中...")
-        self.loading_label.setStyleSheet("color: #3498DB; font-size: 14px;")
+        self.loading_label.setStyleSheet("color: #C9A86A; font-size: 14px;")
         self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.loading_label.setVisible(False)
         main_layout.addWidget(self.loading_label)
@@ -183,10 +222,10 @@ class DashboardView(QWidget):
         cards_layout = QHBoxLayout()
         cards_layout.setSpacing(16)
 
-        self.card_total = StatCard("📊", "工单总数", "0", "#2C3E50")
-        self.card_pending = StatCard("⏳", "待处理", "0", "#FF9800")
-        self.card_high = StatCard("🔥", "高紧急", "0", "#FF4444")
-        self.card_overdue = StatCard("⚠️", "已超时(SLA)", "0", "#E53935")
+        self.card_total = StatCard("📊", "工单总数", "0", "#1E2329")
+        self.card_pending = StatCard("⏳", "待处理", "0", "#C77D3C")
+        self.card_high = StatCard("🔥", "高紧急", "0", "#A8423A")
+        self.card_overdue = StatCard("⚠️", "已超时(SLA)", "0", "#A8423A")
 
         cards_layout.addWidget(self.card_total)
         cards_layout.addWidget(self.card_pending)
@@ -216,31 +255,26 @@ class DashboardView(QWidget):
         self.overdue_layout.addWidget(self.overdue_label)
         main_layout.addWidget(self.overdue_group)
 
-        # 下级工单概览区域（仅高级别角色显示）
+        # 下级工单概览区域（仅高级别角色显示；区块内只保留查看详情入口，汇总与明细均在对话框中查看）
         self.subordinate_group = QGroupBox("📋 下级工单处理概览")
         subordinate_outer = QVBoxLayout(self.subordinate_group)
-        subordinate_outer.setContentsMargins(0, 0, 0, 0)
-        subordinate_outer.setSpacing(0)
+        subordinate_outer.setContentsMargins(12, 10, 12, 10)
+        subordinate_outer.setSpacing(6)
 
-        self.subordinate_scroll = QScrollArea()
-        self.subordinate_scroll.setWidgetResizable(True)
-        self.subordinate_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        self.subordinate_scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
-            "QScrollBar:vertical { width: 8px; background: #F0F0F0; border-radius: 4px; }"
-            "QScrollBar::handle:vertical { background: #BDC3C7; border-radius: 4px; min-height: 30px; }"
-            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-        )
+        # 仅保留查看详情按钮，汇总数据与待处理工单明细均在对话框中查看
+        subordinate_btn_row = QHBoxLayout()
+        subordinate_btn_row.addStretch()
+        self.subordinate_detail_btn = QPushButton("查看详情")
+        self.subordinate_detail_btn.setProperty("secondary", True)
+        self.subordinate_detail_btn.setFixedSize(110, 32)
+        self.subordinate_detail_btn.setEnabled(False)
+        self.subordinate_detail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.subordinate_detail_btn.clicked.connect(self._on_view_subordinate_detail)
+        subordinate_btn_row.addWidget(self.subordinate_detail_btn)
+        subordinate_outer.addLayout(subordinate_btn_row)
 
-        self.subordinate_container = QWidget()
-        self.subordinate_layout = QVBoxLayout(self.subordinate_container)
-        self.subordinate_layout.setSpacing(12)
-        self.subordinate_layout.setContentsMargins(8, 8, 8, 8)
-        self.subordinate_scroll.setWidget(self.subordinate_container)
-
-        subordinate_outer.addWidget(self.subordinate_scroll)
         self.subordinate_group.setVisible(False)
-        main_layout.addWidget(self.subordinate_group, 2)
+        main_layout.addWidget(self.subordinate_group, 0)
 
     def _has_subordinates(self):
         """当前角色是否有下级"""
@@ -284,80 +318,30 @@ class DashboardView(QWidget):
     def _on_subordinate_loaded(self, result):
         if result is None or result.get("code") != 0:
             self.subordinate_group.setVisible(False)
+            self._sub_data = None
+            self.subordinate_detail_btn.setEnabled(False)
             return
 
         sub_data = result.get("data", [])
         if not sub_data:
             self.subordinate_group.setVisible(False)
+            self._sub_data = None
+            self.subordinate_detail_btn.setEnabled(False)
             return
 
+        # 主看板区块内只保留查看详情入口；汇总与明细均在对话框中查看
         self.subordinate_group.setVisible(True)
-        self._clear_layout(self.subordinate_layout)
+        self._sub_data = sub_data
+        self.subordinate_detail_btn.setEnabled(True)
 
-        for item in sub_data:
-            role_display = item.get("role_display", item.get("role", "未知"))
-            total = item.get("total_count", 0)
-            pending = item.get("pending_count", 0)
-            resolved = item.get("resolved_count", 0)
-            pending_tickets = item.get("pending_tickets", [])
-
-            section_title = f"{role_display}  —  总计 {total} | 待处理 {pending} | 已解决 {resolved}"
-            section = CollapsibleSection(section_title)
-
-            # 待处理工单详情
-            if pending_tickets:
-                for t in pending_tickets:
-                    row = QHBoxLayout()
-                    row.setSpacing(8)
-
-                    tid = t.get("ticket_id", "-")
-                    tid_label = QLabel(tid)
-                    tid_label.setFixedWidth(140)
-                    tid_label.setStyleSheet("font-size: 12px; color: #3498DB; font-weight: bold;")
-                    row.addWidget(tid_label)
-
-                    customer = t.get("customer_name", "未知")
-                    customer_label = QLabel(customer)
-                    customer_label.setFixedWidth(60)
-                    customer_label.setStyleSheet("font-size: 12px; color: #2C3E50;")
-                    row.addWidget(customer_label)
-
-                    urgency = t.get("urgency_level", "")
-                    urgency_text = URGENCY_LABELS.get(urgency, urgency or "-")
-                    urgency_color = {"High_Priority": "#FF4444", "Medium_Priority": "#FF9800", "Low_Priority": "#4CAF50"}.get(urgency, "#95A5A6")
-                    urgency_label = QLabel(f"  {urgency_text}  ")
-                    urgency_label.setStyleSheet(
-                        f"background-color: {urgency_color}; color: #FFFFFF; "
-                        f"border-radius: 10px; padding: 2px 8px; font-size: 11px; font-weight: bold;"
-                    )
-                    urgency_label.setFixedHeight(22)
-                    row.addWidget(urgency_label)
-
-                    status = t.get("status", "")
-                    status_text = STATUS_LABELS.get(status, status or "-")
-                    status_label = QLabel(f"  {status_text}  ")
-                    status_label.setStyleSheet(
-                        "background-color: #D6EAF8; color: #2471A3; "
-                        "border-radius: 10px; padding: 2px 8px; font-size: 11px; font-weight: bold;"
-                    )
-                    status_label.setFixedHeight(22)
-                    row.addWidget(status_label)
-
-                    created = t.get("created_at", "-")
-                    if created and len(created) >= 16:
-                        created = created[:16].replace("T", " ")
-                    time_label = QLabel(created)
-                    time_label.setStyleSheet("font-size: 12px; color: #7F8C8D;")
-                    row.addWidget(time_label)
-
-                    row.addStretch()
-                    section.add_layout(row)
-            else:
-                no_pending = QLabel("暂无待处理工单")
-                no_pending.setStyleSheet("font-size: 12px; color: #BDC3C7; padding: 4px 0;")
-                section.add_widget(no_pending)
-
-            self.subordinate_layout.addWidget(section)
+    def _on_view_subordinate_detail(self):
+        """点击"查看详情"：弹出下级工单处理详情对话框（新窗口）"""
+        if not self._sub_data:
+            return
+        # 局部 import 避免与 subordinate_detail_dialog 形成模块级循环依赖
+        from desktop.widgets.subordinate_detail_dialog import SubordinateDetailDialog
+        self._detail_dialog = SubordinateDetailDialog(self._sub_data, parent=self)
+        self._detail_dialog.show()
 
     def _update_cards(self, data):
         self.card_total.set_value(data.get("total_tickets", 0))
@@ -393,7 +377,7 @@ class DashboardView(QWidget):
             name = CATEGORY_MAP.get(key, key)
             name_label = QLabel(name)
             name_label.setFixedWidth(80)
-            name_label.setStyleSheet("font-size: 13px; color: #2C3E50;")
+            name_label.setStyleSheet("font-size: 13px; color: #1E2329;")
             row.addWidget(name_label)
 
             bar = QProgressBar()
@@ -402,15 +386,15 @@ class DashboardView(QWidget):
             bar.setTextVisible(False)
             bar.setFixedHeight(18)
             bar.setStyleSheet(
-                "QProgressBar { background-color: #F0F0F0; border: none; border-radius: 9px; }"
-                "QProgressBar::chunk { background-color: #3498DB; border-radius: 9px; }"
+                "QProgressBar { background-color: #F0F2F5; border: none; border-radius: 9px; }"
+                "QProgressBar::chunk { background-color: #C9A86A; border-radius: 9px; }"
             )
             row.addWidget(bar, 1)
 
             count_label = QLabel(str(count))
             count_label.setFixedWidth(40)
             count_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            count_label.setStyleSheet("font-size: 13px; color: #2C3E50; font-weight: bold;")
+            count_label.setStyleSheet("font-size: 13px; color: #1E2329; font-weight: 600;")
             row.addWidget(count_label)
 
             self.category_layout.addLayout(row)
@@ -440,7 +424,7 @@ class DashboardView(QWidget):
 
             date_label = QLabel(display_date)
             date_label.setFixedWidth(60)
-            date_label.setStyleSheet("font-size: 13px; color: #2C3E50;")
+            date_label.setStyleSheet("font-size: 13px; color: #1E2329;")
             row.addWidget(date_label)
 
             bar = QProgressBar()
@@ -449,15 +433,15 @@ class DashboardView(QWidget):
             bar.setTextVisible(False)
             bar.setFixedHeight(18)
             bar.setStyleSheet(
-                "QProgressBar { background-color: #F0F0F0; border: none; border-radius: 9px; }"
-                "QProgressBar::chunk { background-color: #4CAF50; border-radius: 9px; }"
+                "QProgressBar { background-color: #F0F2F5; border: none; border-radius: 9px; }"
+                "QProgressBar::chunk { background-color: #C9A86A; border-radius: 9px; }"
             )
             row.addWidget(bar, 1)
 
             count_label = QLabel(str(count))
             count_label.setFixedWidth(40)
             count_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            count_label.setStyleSheet("font-size: 13px; color: #2C3E50; font-weight: bold;")
+            count_label.setStyleSheet("font-size: 13px; color: #1E2329; font-weight: 600;")
             row.addWidget(count_label)
 
             self.trend_layout.addLayout(row)
@@ -468,7 +452,7 @@ class DashboardView(QWidget):
             self.overdue_label.setText(
                 f"当前有 {overdue_count} 个工单超过SLA时限，请在工单列表中查看详情"
             )
-            self.overdue_label.setStyleSheet("color: #E53935; font-size: 13px; padding: 8px; font-weight: bold;")
+            self.overdue_label.setStyleSheet("color: #A8423A; font-size: 13px; padding: 8px; font-weight: 600;")
         else:
             self.overdue_label.setText("暂无超时工单")
-            self.overdue_label.setStyleSheet("color: #7F8C8D; font-size: 13px; padding: 8px;")
+            self.overdue_label.setStyleSheet("color: #8A94A6; font-size: 13px; padding: 8px;")

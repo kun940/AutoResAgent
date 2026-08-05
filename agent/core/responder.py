@@ -28,7 +28,7 @@ class ResponderAgent:
                 self._retriever = None
         return self._retriever
 
-    async def generate_reply(self, extracted_data: dict, assessment: dict) -> dict:
+    async def generate_reply(self, extracted_data: dict, assessment: dict, image_analysis: dict = None) -> dict:
         urgency_level = assessment.get("urgency_level", "Medium_Priority")
         fault_desc = extracted_data.get("core_fault_desc", "")
 
@@ -36,7 +36,12 @@ class ResponderAgent:
         sop_title = ""
         try:
             if self.retriever is not None:
-                sop_results = self.retriever.retrieve_sop(fault_desc, urgency_level=urgency_level, top_k=2)
+                sop_results = self.retriever.retrieve_sop(
+                    fault_desc,
+                    urgency_level=urgency_level,
+                    top_k=2,
+                    prefer_emergency=(urgency_level == "High_Priority"),
+                )
                 if sop_results:
                     sop_content = sop_results[0].get("content", "")
                     sop_title = sop_results[0].get("metadata", {}).get("title", "")
@@ -46,15 +51,17 @@ class ResponderAgent:
         llm = get_llm_for_task("rag_reply_generation", temperature=REPLY_TEMPERATURE, max_tokens=REPLY_MAX_TOKENS)
 
         if llm is None:
-            return self._fallback_reply(extracted_data, assessment, sop_content, sop_title)
+            return self._fallback_reply(extracted_data, assessment, sop_content, sop_title, image_analysis=image_analysis)
 
         extracted_json = json.dumps(extracted_data, ensure_ascii=False)
         assessment_json = json.dumps(assessment, ensure_ascii=False)
+        emergency_actions_hint = self._build_emergency_hint(urgency_level, image_analysis)
 
         user_content = REPLY_USER_PROMPT.format(
             extracted_json=extracted_json,
             assessment_json=assessment_json,
             sop_content=sop_content if sop_content else "无匹配SOP文档",
+            emergency_actions_hint=emergency_actions_hint,
         )
 
         messages = [
@@ -67,7 +74,32 @@ class ResponderAgent:
             return self._parse_response(response.content, extracted_data, assessment, sop_content, sop_title)
         except Exception as e:
             logger.error(f"Reply generation LLM call failed: {e}")
-            return self._fallback_reply(extracted_data, assessment, sop_content, sop_title)
+            return self._fallback_reply(extracted_data, assessment, sop_content, sop_title, image_analysis=image_analysis)
+
+    @staticmethod
+    def _build_emergency_hint(urgency_level: str, image_analysis: dict = None) -> str:
+        """根据紧急度和图片分析结果构造紧急提示"""
+        if urgency_level != "High_Priority":
+            return ""
+
+        hints = ["【紧急处置提示】"]
+
+        # 图片证据中的紧急指标
+        if image_analysis and image_analysis.get("damage_detected"):
+            fault_types = image_analysis.get("fault_types_found", [])
+            if fault_types:
+                hints.append(f"图片检测到故障类型：{'、'.join(fault_types)}")
+            if image_analysis.get("has_emergency_indicators"):
+                hints.append("图片检测到紧急安全指标，回复中必须包含安全警示步骤！")
+            damage_level = image_analysis.get("damage_level", "none")
+            if damage_level in ("severe", "moderate"):
+                hints.append(f"图片损伤等级：{damage_level}，需提供详细止损指令")
+
+        if len(hints) == 1:
+            # 无图片证据时，通用紧急提示
+            hints.append("该客诉为高优先级，回复中必须包含3-5个具体可操作的安全步骤")
+
+        return "\n".join(hints)
 
     def _parse_response(self, content, extracted_data, assessment, sop_content, sop_title):
         try:
@@ -115,20 +147,43 @@ class ResponderAgent:
             }
 
     @staticmethod
-    def _fallback_reply(extracted_data, assessment, sop_content, sop_title):
+    def _fallback_reply(extracted_data, assessment, sop_content, sop_title, image_analysis=None):
         fault = extracted_data.get("core_fault_desc", "故障")
         urgency = assessment.get("urgency_level", "Medium_Priority")
         category = assessment.get("issue_category", "Other")
 
+        # 图片证据中的故障类型
+        img_fault_types = []
+        if image_analysis and image_analysis.get("damage_detected"):
+            img_fault_types = image_analysis.get("fault_types_found", [])
+
         if urgency == "High_Priority":
             if category in ("Hardware_Thermal_Runaway", "Electrical_Leakage"):
-                reply = (
-                    f"您好，已收到您的故障反馈（{fault}），该问题已标记为高优先级。"
-                    "请立即切断设备电源，确保人员安全。"
-                    "我们的技术团队将立即介入处理，专业工程师将在1小时内与您联系。"
-                    "如有紧急情况，请拨打售后热线400-XXX-XXXX。"
-                )
-                default_sop = "设备过热/冒烟紧急处置"
+                # 细化止损步骤
+                if "冒烟" in fault or "起火" in fault or any(t in str(img_fault_types) for t in ["冒烟", "烧焦", "起火"]):
+                    reply = (
+                        f"您好，已收到您的故障反馈（{fault}），该问题已标记为高优先级。"
+                        "请立即执行以下步骤：1.请立即切断设备总电源/总闸；2.请人员远离设备并保持通风；3.严禁用水灭火。"
+                        "我们的技术团队将立即介入处理，专业工程师将在1小时内与您联系。"
+                        "如有紧急情况，请拨打售后热线400-XXX-XXXX。"
+                    )
+                    default_sop = "设备起火紧急处置SOP"
+                elif "漏电" in fault or "触电" in fault or any(t in str(img_fault_types) for t in ["漏电", "触电"]):
+                    reply = (
+                        f"您好，已收到您的故障反馈（{fault}），该问题已标记为高优先级。"
+                        "请立即执行以下步骤：1.请立即切断总闸并远离设备；2.严禁触碰设备任何部位；3.确保人员安全撤离。"
+                        "我们的技术团队将立即介入处理，专业工程师将在1小时内与您联系。"
+                        "如有紧急情况，请拨打售后热线400-XXX-XXXX。"
+                    )
+                    default_sop = "触电事故紧急处置SOP"
+                else:
+                    reply = (
+                        f"您好，已收到您的故障反馈（{fault}），该问题已标记为高优先级。"
+                        "请立即切断设备电源，确保人员安全。"
+                        "我们的技术团队将立即介入处理，专业工程师将在1小时内与您联系。"
+                        "如有紧急情况，请拨打售后热线400-XXX-XXXX。"
+                    )
+                    default_sop = "设备过热/冒烟紧急处置"
             else:
                 reply = (
                     f"您好，已收到您的故障反馈（{fault}），该问题已标记为高优先级，"

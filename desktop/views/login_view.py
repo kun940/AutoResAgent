@@ -55,7 +55,7 @@ class LoginWindow(QMainWindow):
 
         central = QWidget()
         self.setCentralWidget(central)
-        central.setStyleSheet("background-color: #F5F6FA;")
+        central.setStyleSheet("background-color: #F7F8FA;")
 
         outer_layout = QVBoxLayout(central)
         outer_layout.setContentsMargins(40, 40, 40, 40)
@@ -85,20 +85,20 @@ class LoginWindow(QMainWindow):
 
         app_name = QLabel("客诉自动回复出单智能体")
         app_name.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        app_name.setStyleSheet("font-size: 22px; font-weight: bold; color: #2C3E50; background: transparent;")
+        app_name.setStyleSheet("font-size: 22px; font-weight: 600; color: #1E2329; background: transparent;")
         layout.addWidget(app_name)
 
         subtitle = QLabel("智能客诉处理平台")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle.setStyleSheet("font-size: 14px; color: #7F8C8D; margin-top: 8px; background: transparent;")
+        subtitle.setStyleSheet("font-size: 14px; color: #8A94A6; margin-top: 8px; background: transparent;")
         layout.addWidget(subtitle)
 
         layout.addSpacing(30)
 
         form_group = QGroupBox()
         form_group.setStyleSheet(
-            "QGroupBox { background-color: #FFFFFF; border: 1px solid #E0E0E0; "
-            "border-radius: 8px; padding: 24px 20px; margin-top: 0; }"
+            "QGroupBox { background-color: #FFFFFF; border: 1px solid #EAEDF2; "
+            "border-radius: 10px; padding: 24px 20px; margin-top: 0; }"
         )
         form_layout = QVBoxLayout(form_group)
         form_layout.setSpacing(16)
@@ -107,9 +107,9 @@ class LoginWindow(QMainWindow):
         self.login_username.setPlaceholderText("用户名")
         self.login_username.setFixedHeight(40)
         self.login_username.setStyleSheet(
-            "QLineEdit { border: 1px solid #DDD; border-radius: 4px; "
+            "QLineEdit { border: 1px solid #DDE0E4; border-radius: 6px; "
             "padding: 8px 12px; font-size: 14px; }"
-            "QLineEdit:focus { border: 1px solid #3498DB; }"
+            "QLineEdit:focus { border: 1px solid #C9A86A; }"
         )
         form_layout.addWidget(self.login_username)
 
@@ -118,9 +118,9 @@ class LoginWindow(QMainWindow):
         self.login_password.setEchoMode(QLineEdit.EchoMode.Password)
         self.login_password.setFixedHeight(40)
         self.login_password.setStyleSheet(
-            "QLineEdit { border: 1px solid #DDD; border-radius: 4px; "
+            "QLineEdit { border: 1px solid #DDE0E4; border-radius: 6px; "
             "padding: 8px 12px; font-size: 14px; }"
-            "QLineEdit:focus { border: 1px solid #3498DB; }"
+            "QLineEdit:focus { border: 1px solid #C9A86A; }"
         )
         self.login_password.returnPressed.connect(self._on_login)
         form_layout.addWidget(self.login_password)
@@ -129,17 +129,17 @@ class LoginWindow(QMainWindow):
         self.login_btn.setFixedHeight(44)
         self.login_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.login_btn.setStyleSheet(
-            "QPushButton { background-color: #3498DB; color: #FFFFFF; border: none; "
-            "border-radius: 4px; font-size: 16px; font-weight: bold; }"
-            "QPushButton:hover { background-color: #2980B9; }"
-            "QPushButton:disabled { background-color: #BDC3C7; }"
+            "QPushButton { background-color: #1E2329; color: #FFFFFF; border: none; "
+            "border-radius: 6px; font-size: 16px; font-weight: 600; }"
+            "QPushButton:hover { background-color: #2A3038; }"
+            "QPushButton:disabled { background-color: #D0D5DD; }"
         )
         self.login_btn.clicked.connect(self._on_login)
         form_layout.addWidget(self.login_btn)
 
         self.login_error = QLabel("")
         self.login_error.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.login_error.setStyleSheet("color: #FF4444; font-size: 13px; background: transparent;")
+        self.login_error.setStyleSheet("color: #A8423A; font-size: 13px; background: transparent;")
         self.login_error.setFixedHeight(20)
         form_layout.addWidget(self.login_error)
 
@@ -151,8 +151,8 @@ class LoginWindow(QMainWindow):
         register_link.setFlat(True)
         register_link.setCursor(Qt.CursorShape.PointingHandCursor)
         register_link.setStyleSheet(
-            "QPushButton { border: none; color: #3498DB; font-size: 13px; background: transparent; text-align: center; }"
-            "QPushButton:hover { color: #2980B9; text-decoration: underline; }"
+            "QPushButton { border: none; color: #C9A86A; font-size: 13px; background: transparent; text-align: center; }"
+            "QPushButton:hover { color: #A8884A; }"
         )
         register_link.clicked.connect(lambda: self.stack.setCurrentIndex(1))
         layout.addWidget(register_link)
@@ -172,15 +172,15 @@ class LoginWindow(QMainWindow):
 
         title = QLabel("注册新账号")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 22px; font-weight: bold; color: #2C3E50; background: transparent;")
+        title.setStyleSheet("font-size: 22px; font-weight: 600; color: #1E2329; background: transparent;")
         layout.addWidget(title)
 
         layout.addSpacing(30)
 
         form_group = QGroupBox()
         form_group.setStyleSheet(
-            "QGroupBox { background-color: #FFFFFF; border: 1px solid #E0E0E0; "
-            "border-radius: 8px; padding: 24px 20px; margin-top: 0; }"
+            "QGroupBox { background-color: #FFFFFF; border: 1px solid #EAEDF2; "
+            "border-radius: 10px; padding: 24px 20px; margin-top: 0; }"
         )
         form_layout = QVBoxLayout(form_group)
         form_layout.setSpacing(12)
@@ -189,9 +189,9 @@ class LoginWindow(QMainWindow):
         self.reg_username.setPlaceholderText("用户名")
         self.reg_username.setFixedHeight(40)
         self.reg_username.setStyleSheet(
-            "QLineEdit { border: 1px solid #DDD; border-radius: 4px; "
+            "QLineEdit { border: 1px solid #DDE0E4; border-radius: 6px; "
             "padding: 8px 12px; font-size: 14px; }"
-            "QLineEdit:focus { border: 1px solid #3498DB; }"
+            "QLineEdit:focus { border: 1px solid #C9A86A; }"
         )
         form_layout.addWidget(self.reg_username)
 
@@ -200,9 +200,9 @@ class LoginWindow(QMainWindow):
         self.reg_password.setEchoMode(QLineEdit.EchoMode.Password)
         self.reg_password.setFixedHeight(40)
         self.reg_password.setStyleSheet(
-            "QLineEdit { border: 1px solid #DDD; border-radius: 4px; "
+            "QLineEdit { border: 1px solid #DDE0E4; border-radius: 6px; "
             "padding: 8px 12px; font-size: 14px; }"
-            "QLineEdit:focus { border: 1px solid #3498DB; }"
+            "QLineEdit:focus { border: 1px solid #C9A86A; }"
         )
         form_layout.addWidget(self.reg_password)
 
@@ -211,9 +211,9 @@ class LoginWindow(QMainWindow):
         self.reg_confirm.setEchoMode(QLineEdit.EchoMode.Password)
         self.reg_confirm.setFixedHeight(40)
         self.reg_confirm.setStyleSheet(
-            "QLineEdit { border: 1px solid #DDD; border-radius: 4px; "
+            "QLineEdit { border: 1px solid #DDE0E4; border-radius: 6px; "
             "padding: 8px 12px; font-size: 14px; }"
-            "QLineEdit:focus { border: 1px solid #3498DB; }"
+            "QLineEdit:focus { border: 1px solid #C9A86A; }"
         )
         self.reg_confirm.returnPressed.connect(self._on_register)
         form_layout.addWidget(self.reg_confirm)
@@ -224,7 +224,7 @@ class LoginWindow(QMainWindow):
         self.reg_role.addItem("部门主管", "department_manager")
         self.reg_role.addItem("总经理", "general_manager")
         self.reg_role.setStyleSheet(
-            "QComboBox { border: 1px solid #DDD; border-radius: 4px; "
+            "QComboBox { border: 1px solid #DDE0E4; border-radius: 6px; "
             "padding: 8px 12px; font-size: 14px; }"
             "QComboBox::drop-down { border: none; width: 30px; }"
         )
@@ -234,17 +234,17 @@ class LoginWindow(QMainWindow):
         self.register_btn.setFixedHeight(44)
         self.register_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.register_btn.setStyleSheet(
-            "QPushButton { background-color: #4CAF50; color: #FFFFFF; border: none; "
-            "border-radius: 4px; font-size: 16px; font-weight: bold; }"
-            "QPushButton:hover { background-color: #43A047; }"
-            "QPushButton:disabled { background-color: #BDC3C7; }"
+            "QPushButton { background-color: #1E2329; color: #FFFFFF; border: none; "
+            "border-radius: 6px; font-size: 16px; font-weight: 600; }"
+            "QPushButton:hover { background-color: #2A3038; }"
+            "QPushButton:disabled { background-color: #D0D5DD; }"
         )
         self.register_btn.clicked.connect(self._on_register)
         form_layout.addWidget(self.register_btn)
 
         self.reg_error = QLabel("")
         self.reg_error.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.reg_error.setStyleSheet("color: #FF4444; font-size: 13px; background: transparent;")
+        self.reg_error.setStyleSheet("color: #A8423A; font-size: 13px; background: transparent;")
         self.reg_error.setFixedHeight(20)
         form_layout.addWidget(self.reg_error)
 
@@ -256,8 +256,8 @@ class LoginWindow(QMainWindow):
         login_link.setFlat(True)
         login_link.setCursor(Qt.CursorShape.PointingHandCursor)
         login_link.setStyleSheet(
-            "QPushButton { border: none; color: #3498DB; font-size: 13px; background: transparent; text-align: center; }"
-            "QPushButton:hover { color: #2980B9; text-decoration: underline; }"
+            "QPushButton { border: none; color: #C9A86A; font-size: 13px; background: transparent; text-align: center; }"
+            "QPushButton:hover { color: #A8884A; }"
         )
         login_link.clicked.connect(lambda: self.stack.setCurrentIndex(0))
         layout.addWidget(login_link)
@@ -340,7 +340,7 @@ class LoginWindow(QMainWindow):
         self.reg_confirm.clear()
         self.reg_error.setText("")
 
-        self.login_error.setStyleSheet("color: #4CAF50; font-size: 13px; background: transparent;")
+        self.login_error.setStyleSheet("color: #3A7D5F; font-size: 13px; background: transparent;")
         self.login_error.setText("注册成功，请登录")
 
         self.stack.setCurrentIndex(0)

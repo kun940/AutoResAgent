@@ -6,8 +6,8 @@ from typing import Optional
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.models.models import Ticket, TicketLog, Notification, RoutingRule, User
-from shared.constants import TicketStatus, TICKET_STATUS_TRANSITIONS, NotificationType, TicketAction
+from backend.app.models.models import Ticket, TicketLog, Notification, RoutingRule, User, QualityTraceIndex
+from shared.constants import TicketStatus, TICKET_STATUS_TRANSITIONS, NotificationType, TicketAction, ActionType
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +87,8 @@ class TicketService:
             routing_decision=result.get("routing_decision"),
             auto_reply_sent=result.get("auto_reply_sent"),
             sop_applied=result.get("sop_applied"),
+            # v1.3: 持久化图片分析结果
+            image_analysis=result.get("image_analysis"),
             status=TicketStatus.ROUTED,
         )
         db.add(ticket)
@@ -111,6 +113,27 @@ class TicketService:
         )
         db.add(log)
         await db.flush()
+
+        # v1.2: 工单入库后写入质量追溯索引（归档）
+        extracted = result.get("extracted_data", {}) or {}
+        archive_complete = all([
+            result.get("raw_input"),
+            result.get("extracted_data"),
+            result.get("agent_business_assessment"),
+            result.get("auto_reply_sent"),
+        ])
+        trace_index = QualityTraceIndex(
+            ticket_id=result["ticket_id"],
+            model_number=extracted.get("model_number"),
+            batch_code=extracted.get("batch_code"),
+            issue_category=result.get("issue_category"),
+            urgency_level=result.get("urgency_level"),
+            order_type=ActionType.AUTO_REPLY.value,
+            warranty_status=result.get("warranty_status"),
+            trace_date=datetime.now().date(),
+            archive_complete=1 if archive_complete else 0,
+        )
+        db.add(trace_index)
 
         return result
 
@@ -156,6 +179,7 @@ class TicketService:
         ticket_id: str,
         status: str,
         note: Optional[str] = None,
+        operator_id: Optional[int] = None,
     ) -> Optional[Ticket]:
         ticket = await self.get_ticket(db, ticket_id)
         if not ticket:
@@ -175,9 +199,23 @@ class TicketService:
         log = TicketLog(
             ticket_id=ticket_id,
             action=TicketAction.STATUS_CHANGE,
+            operator_id=operator_id,
             detail=f"状态变更：{current_status.value} → {new_status.value}" + (f"，备注：{note}" if note else ""),
         )
         db.add(log)
+
+        # v1.2: 同步更新质量追溯索引的处理动作与解决天数
+        trace_stmt = select(QualityTraceIndex).where(QualityTraceIndex.ticket_id == ticket_id).order_by(QualityTraceIndex.created_at.desc()).limit(1)
+        trace_result = await db.execute(trace_stmt)
+        trace = trace_result.scalar_one_or_none()
+        if trace:
+            if new_status == TicketStatus.RESOLVED:
+                trace.order_type = ActionType.MANUAL_RESOLVED.value
+                if ticket.created_at:
+                    trace.resolution_days = round((datetime.now() - ticket.created_at).total_seconds() / 86400, 2)
+            elif new_status == TicketStatus.CLOSED:
+                trace.order_type = ActionType.MANUAL_RESOLVED.value
+
         await db.flush()
         return ticket
 
@@ -187,6 +225,7 @@ class TicketService:
         ticket_id: str,
         to_level: str,
         reason: str,
+        operator_id: Optional[int] = None,
     ) -> Optional[Ticket]:
         ticket = await self.get_ticket(db, ticket_id)
         if not ticket:
@@ -211,6 +250,7 @@ class TicketService:
         log = TicketLog(
             ticket_id=ticket_id,
             action=TicketAction.ESCALATION,
+            operator_id=operator_id,
             detail=f"紧急度升级：{old_level} → {to_level}，原因：{reason}",
         )
         db.add(log)
@@ -224,6 +264,7 @@ class TicketService:
         target_username: str,
         target_role: str,
         reason: str,
+        operator_id: Optional[int] = None,
     ) -> Optional[Ticket]:
         ticket = await self.get_ticket(db, ticket_id)
         if not ticket:
@@ -254,6 +295,7 @@ class TicketService:
         log = TicketLog(
             ticket_id=ticket_id,
             action=TicketAction.REASSIGN,
+            operator_id=operator_id,
             detail=f"转派：{old_assignee} → {target_user.username}({target_user.role})，原因：{reason}",
         )
         db.add(log)

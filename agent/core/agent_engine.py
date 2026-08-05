@@ -19,6 +19,28 @@ class ComplaintAgentEngine:
         self.responder = ResponderAgent()
         self.router = RoutingAgent()
         self._sop_indexed = False
+        self._multimodal_analyzer = None
+        self._multimodal_init_failed = False
+
+    @property
+    def multimodal_analyzer(self):
+        """懒加载 MultimodalAnalyzer"""
+        if self._multimodal_init_failed:
+            return None
+        if self._multimodal_analyzer is None:
+            try:
+                if os.getenv("OCR_ENABLED", "1") == "1":
+                    from agent.multimodal import MultimodalAnalyzer
+                    self._multimodal_analyzer = MultimodalAnalyzer()
+                else:
+                    logger.info("OCR disabled by OCR_ENABLED=0")
+                    self._multimodal_init_failed = True
+                    return None
+            except Exception as e:
+                logger.warning(f"MultimodalAnalyzer init failed: {e}")
+                self._multimodal_init_failed = True
+                return None
+        return self._multimodal_analyzer
 
     async def _ensure_sop_index(self):
         if self._sop_indexed:
@@ -51,17 +73,45 @@ class ComplaintAgentEngine:
         logger.info(f"Processing complaint: {text[:50]}...")
         ticket_id = self._generate_ticket_id()
 
+        # Step 0: 多模态分析
+        image_analysis = None
+        if image_paths and self.multimodal_analyzer is not None:
+            try:
+                import asyncio
+                image_analysis = await asyncio.wait_for(
+                    self.multimodal_analyzer.analyze_images(image_paths=image_paths, text_context=text),
+                    timeout=30,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Multimodal analysis timeout(30s)")
+                image_analysis = None
+            except Exception as e:
+                logger.error(f"Multimodal analysis failed: {e}")
+                image_analysis = None
+        elif image_paths:
+            # 多模态分析器不可用，记录图片证据
+            image_analysis = {
+                "damage_detected": False, "damage_level": "none",
+                "fault_types_found": [], "has_emergency_indicators": False,
+                "overall_assessment": "图片分析服务不可用，已记录图片证据",
+                "suggestion": "", "analysis_source": "none",
+                "image_count": len(image_paths),
+            }
+
+        # Step 1: 提取（传入image_analysis）
         try:
             extracted_data = await self.extractor.extract(
                 text=text,
                 image_paths=image_paths or [],
+                image_analysis=image_analysis,
             )
         except Exception as e:
             logger.error(f"Extraction failed: {e}")
             extracted_data = {"core_fault_desc": text}
 
+        # Step 2: 定级（传入image_analysis和原始text）
         try:
-            assessment = await self.assessor.assess(extracted_data=extracted_data)
+            assessment = await self.assessor.assess(extracted_data=extracted_data, image_analysis=image_analysis, raw_text=text)
         except Exception as e:
             logger.error(f"Assessment failed: {e}")
             assessment = {
@@ -71,11 +121,13 @@ class ComplaintAgentEngine:
                 "warranty_status": "Unknown",
             }
 
+        # Step 3: 回复（传入image_analysis）
         try:
             await self._ensure_sop_index()
             reply_result = await self.responder.generate_reply(
                 extracted_data=extracted_data,
                 assessment=assessment,
+                image_analysis=image_analysis,
             )
         except Exception as e:
             logger.error(f"Reply generation failed: {e}")
@@ -84,6 +136,7 @@ class ComplaintAgentEngine:
                 "sop_applied": None,
             }
 
+        # Step 4: 路由
         try:
             routing_decision = await self.router.route(
                 urgency_level=assessment.get("urgency_level", "Medium_Priority"),
@@ -91,6 +144,9 @@ class ComplaintAgentEngine:
         except Exception as e:
             logger.error(f"Routing failed: {e}")
             routing_decision = "department_manager_queue"
+
+        # v1.2: 出单决策已移除，Pipeline 为 4 步（提取→定级→回复→路由）
+        # 工单入库与归档由 ticket_service.submit_complaint 处理
 
         result = {
             "ticket_id": ticket_id,
@@ -105,6 +161,7 @@ class ComplaintAgentEngine:
             "routing_decision": routing_decision,
             "auto_reply_sent": reply_result.get("auto_reply_sent", FALLBACK_TEMPLATE_REPLY),
             "sop_applied": reply_result.get("sop_applied"),
+            "image_analysis": image_analysis,  # v1.3新增
             "status": "routed",
         }
 

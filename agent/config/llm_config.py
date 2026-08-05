@@ -9,6 +9,10 @@ from backend.app.config import settings
 
 logger = logging.getLogger(__name__)
 
+"""
+构建模型工厂
+并根据任务类型返回对应的模型实例
+"""
 
 def get_deepseek_llm(temperature: float = 0.1, max_tokens: int = 2048) -> ChatOpenAI:
     return ChatOpenAI(
@@ -23,8 +27,8 @@ def get_deepseek_llm(temperature: float = 0.1, max_tokens: int = 2048) -> ChatOp
 
 def get_qwen_llm(temperature: float = 0.1, max_tokens: int = 2048) -> ChatOpenAI:
     return ChatOpenAI(
-        model="Qwen/QwQ-32B",
-        api_key=settings.DASHSCOPE_API_KEY,
+        model="xopqwen35v35b",
+        api_key=settings.QWEN_API_KEY,
         base_url=settings.QWEN_BASE_URL,
         temperature=temperature,
         max_tokens=max_tokens,
@@ -32,28 +36,35 @@ def get_qwen_llm(temperature: float = 0.1, max_tokens: int = 2048) -> ChatOpenAI
     )
 
 
-def get_qwen_vl_llm(temperature: float = 0.1, max_tokens: int = 2048) -> ChatOpenAI:
+def get_vlm_llm(temperature: float = 0.1, max_tokens: int = 1024) -> ChatOpenAI:
+    """v2.0: 多模态大模型（VLM），用于图片端到端分析"""
     return ChatOpenAI(
-        model="Qwen/QwQ-32B",
-        api_key=settings.DASHSCOPE_API_KEY,
+        model="xopqwen35v35b",
+        api_key=settings.QWEN_API_KEY,
         base_url=settings.QWEN_BASE_URL,
         temperature=temperature,
         max_tokens=max_tokens,
-        timeout=settings.LLM_TIMEOUT_SECONDS,
+        timeout=settings.VLM_TIMEOUT_SECONDS,
     )
+
 
 
 MODEL_FACTORIES = {
     "deepseek": get_deepseek_llm,
     "qwen": get_qwen_llm,
-    "qwen_vl": get_qwen_vl_llm,
+    "vlm": get_vlm_llm,
 }
 
+"""
+任务模型映射
+根据任务类型返回对应的模型实例
+"""
 TASK_MODEL_MAP = {
     "field_extraction": {"primary": "deepseek", "fallback": "qwen"},
     "business_assessment": {"primary": "deepseek", "fallback": "qwen"},
     "rag_reply_generation": {"primary": "qwen", "fallback": "deepseek"},
-    "image_analysis": {"primary": "qwen_vl", "fallback": None},
+    "image_analysis": {"primary": "qwen", "fallback": "deepseek"},  # L2 降级路径：OCR+文本推理
+    "image_vlm_analysis": {"primary": "vlm", "fallback": "qwen"},  # L1 主路径：VLM 端到端分析
 }
 
 FALLBACK_TEMPLATE_REPLY = (
@@ -62,7 +73,9 @@ FALLBACK_TEMPLATE_REPLY = (
     "如有紧急情况，请拨打售后热线400-XXX-XXXX。"
 )
 
-
+"""
+根据任务类型返回对应的模型实例
+"""
 def get_llm_for_task(task: str, temperature: float = 0.1, max_tokens: int = 2048) -> BaseChatModel:
     config = TASK_MODEL_MAP.get(task, {"primary": settings.LLM_PRIMARY, "fallback": settings.LLM_FALLBACK})
 

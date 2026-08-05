@@ -6,12 +6,13 @@ from PyQt6.QtWidgets import (
     QTextEdit, QPushButton, QComboBox, QSpinBox, QGroupBox,
     QFormLayout, QTableWidget, QTableWidgetItem, QHeaderView,
     QScrollArea, QSizePolicy, QDialog, QDialogButtonBox, QMessageBox,
-    QAbstractItemView
+    QAbstractItemView, QFileDialog, QInputDialog
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QFont, QPixmap
+from PyQt6.QtGui import QFont, QPixmap, QColor
 
 from desktop.api_client import ApiClient
+from desktop.widgets.export_dialog import ExportDialog
 from shared.constants import TICKET_STATUS_TRANSITIONS, TicketStatus
 
 
@@ -64,6 +65,34 @@ ROLE_OPTIONS = {
     "管理员": "admin",
 }
 
+IMPACT_MAP = {
+    "No_Impact": "无影响",
+    "Minor_Inconvenience": "轻微不便",
+    "Functional_Loss": "功能丧失",
+    "Production_Down": "生产停滞",
+    "Safety_Hazard": "安全隐患",
+    "Group_Risk": "集团风险",
+}
+
+WARRANTY_MAP = {
+    "In_Warranty": "保内",
+    "Out_of_Warranty": "保外",
+    "Unknown": "未知",
+}
+
+ROUTING_MAP = {
+    "frontline_staff_queue": "一线客服队列",
+    "department_manager_queue": "部门主管队列",
+    "general_manager_dashboard": "总经理看板",
+}
+
+ACTION_TYPE_MAP = {
+    "Auto_Reply": "自动回复",
+    "Routed": "已路由",
+    "Manual_Resolved": "人工解决",
+    "Escalated": "已升级",
+}
+
 
 class LoadTicketsThread(QThread):
     finished = pyqtSignal(object)
@@ -84,6 +113,51 @@ class LoadTicketsThread(QThread):
             page=self.page, page_size=self.page_size
         )
         self.finished.emit(result)
+
+
+class SearchTicketsThread(QThread):
+    """关键词搜索工单线程"""
+    finished = pyqtSignal(object)
+
+    def __init__(self, api_client, keyword, status=None, urgency_level=None, page=1, page_size=20):
+        super().__init__()
+        self.api_client = api_client
+        self.keyword = keyword
+        self.status = status
+        self.urgency_level = urgency_level
+        self.page = page
+        self.page_size = page_size
+
+    def run(self):
+        result = self.api_client.search_tickets(
+            keyword=self.keyword, status=self.status,
+            urgency_level=self.urgency_level,
+            page=self.page, page_size=self.page_size
+        )
+        self.finished.emit(result)
+
+
+class ExportThread(QThread):
+    """数据导出线程"""
+    finished = pyqtSignal(object)  # (bytes, content_type, filename) 或 None
+    error = pyqtSignal(str)
+
+    def __init__(self, api_client, format="xlsx", status=None, urgency_level=None):
+        super().__init__()
+        self.api_client = api_client
+        self.format = format
+        self.status = status
+        self.urgency_level = urgency_level
+
+    def run(self):
+        try:
+            result = self.api_client.export_tickets(
+                format=self.format, status=self.status,
+                urgency_level=self.urgency_level
+            )
+            self.finished.emit(result)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class ActionThread(QThread):
@@ -397,10 +471,13 @@ class TicketListView(QWidget):
         self._tickets = []
         self._selected_ticket = None
         self._load_thread = None
+        self._search_thread = None
         self._action_thread = None
+        self._export_thread = None
         self._image_loaders = []
         self._image_version = 0
         self._detail_thread = None
+        self._search_keyword = ""
         self._setup_ui()
         self._load_tickets()
 
@@ -409,6 +486,29 @@ class TicketListView(QWidget):
         main_layout.setContentsMargins(24, 24, 24, 24)
         main_layout.setSpacing(16)
 
+        # 搜索栏
+        search_layout = QHBoxLayout()
+        search_layout.setSpacing(8)
+
+        search_layout.addWidget(QLabel("搜索："))
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("输入关键词搜索工单（至少2个字符）")
+        self.search_input.setFixedWidth(280)
+        self.search_input.returnPressed.connect(self._on_keyword_search)
+        search_layout.addWidget(self.search_input)
+
+        self.keyword_search_btn = QPushButton("搜索")
+        self.keyword_search_btn.clicked.connect(self._on_keyword_search)
+        search_layout.addWidget(self.keyword_search_btn)
+
+        self.clear_search_btn = QPushButton("清除搜索")
+        self.clear_search_btn.clicked.connect(self._on_clear_search)
+        search_layout.addWidget(self.clear_search_btn)
+
+        search_layout.addStretch()
+        main_layout.addLayout(search_layout)
+
+        # 筛选栏
         filter_layout = QHBoxLayout()
         filter_layout.setSpacing(12)
 
@@ -443,11 +543,59 @@ class TicketListView(QWidget):
 
         filter_layout.addStretch()
 
+        self.export_btn = QPushButton("导出")
+        self.export_btn.setStyleSheet(
+            "QPushButton { background-color: #1E2329; color: #FFFFFF; border: none; "
+            "border-radius: 6px; padding: 6px 16px; font-weight: 500; font-size: 13px; }"
+            "QPushButton:hover { background-color: #2A3038; }"
+        )
+        self.export_btn.clicked.connect(self._on_export)
+        filter_layout.addWidget(self.export_btn)
+
         self.refresh_btn = QPushButton("刷新")
         self.refresh_btn.clicked.connect(self._on_refresh)
         filter_layout.addWidget(self.refresh_btn)
 
         main_layout.addLayout(filter_layout)
+
+        # 批量操作按钮栏
+        batch_layout = QHBoxLayout()
+        batch_layout.setSpacing(8)
+
+        batch_layout.addWidget(QLabel("批量操作："))
+        self.batch_reassign_btn = QPushButton("批量转派")
+        self.batch_reassign_btn.setStyleSheet(
+            "QPushButton { background-color: #1E2329; color: #FFFFFF; border: none; "
+            "border-radius: 6px; padding: 6px 12px; font-weight: 500; font-size: 12px; }"
+            "QPushButton:hover { background-color: #2A3038; }"
+        )
+        self.batch_reassign_btn.clicked.connect(self._on_batch_reassign)
+        batch_layout.addWidget(self.batch_reassign_btn)
+
+        self.batch_escalate_btn = QPushButton("批量升级")
+        self.batch_escalate_btn.setStyleSheet(
+            "QPushButton { background-color: #C77D3C; color: #FFFFFF; border: none; "
+            "border-radius: 6px; padding: 6px 12px; font-weight: 500; font-size: 12px; }"
+            "QPushButton:hover { background-color: #B56E32; }"
+        )
+        self.batch_escalate_btn.clicked.connect(self._on_batch_escalate)
+        batch_layout.addWidget(self.batch_escalate_btn)
+
+        self.batch_close_btn = QPushButton("批量关闭")
+        self.batch_close_btn.setStyleSheet(
+            "QPushButton { background-color: #A8423A; color: #FFFFFF; border: none; "
+            "border-radius: 6px; padding: 6px 12px; font-weight: 500; font-size: 12px; }"
+            "QPushButton:hover { background-color: #973A33; }"
+        )
+        self.batch_close_btn.clicked.connect(self._on_batch_close)
+        batch_layout.addWidget(self.batch_close_btn)
+
+        self.selected_count_label = QLabel("已选 0 项")
+        self.selected_count_label.setStyleSheet("color: #8A94A6; font-size: 12px; padding-left: 8px;")
+        batch_layout.addWidget(self.selected_count_label)
+
+        batch_layout.addStretch()
+        main_layout.addLayout(batch_layout)
 
         content_layout = QHBoxLayout()
         content_layout.setSpacing(16)
@@ -458,16 +606,18 @@ class TicketListView(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self.table.setColumnWidth(0, 160)
-        self.table.setColumnWidth(1, 100)
-        self.table.setColumnWidth(2, 100)
-        self.table.setColumnWidth(3, 100)
-        self.table.setColumnWidth(4, 120)
+        self.table.setColumnWidth(1, 80)
+        self.table.setColumnWidth(2, 90)
+        self.table.setColumnWidth(3, 90)
+        self.table.setColumnWidth(4, 90)
+        self.table.setColumnWidth(5, 100)
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.cellClicked.connect(self._on_row_clicked)
+        self.table.itemSelectionChanged.connect(self._on_selection_changed)
         content_layout.addWidget(self.table, 1)
 
         detail_scroll = QScrollArea()
@@ -483,7 +633,7 @@ class TicketListView(QWidget):
 
         page_layout = QHBoxLayout()
         self.total_label = QLabel("共 0 条记录")
-        self.total_label.setStyleSheet("color: #7F8C8D; font-size: 13px;")
+        self.total_label.setStyleSheet("color: #8A94A6; font-size: 13px;")
         page_layout.addWidget(self.total_label)
         page_layout.addStretch()
 
@@ -492,7 +642,7 @@ class TicketListView(QWidget):
         page_layout.addWidget(self.prev_btn)
 
         self.page_label = QLabel("第 1 / 1 页")
-        self.page_label.setStyleSheet("color: #2C3E50; font-size: 13px; padding: 0 12px;")
+        self.page_label.setStyleSheet("color: #1E2329; font-size: 13px; padding: 0 12px;")
         page_layout.addWidget(self.page_label)
 
         self.next_btn = QPushButton("下一页")
@@ -544,8 +694,15 @@ class TicketListView(QWidget):
         self.d_order = QLabel("-")
         self.d_model = QLabel("-")
         self.d_batch = QLabel("-")
-        self.d_fault = QLabel("-")
-        self.d_fault.setWordWrap(True)
+        self.d_fault = QTextEdit()
+        self.d_fault.setReadOnly(True)
+        self.d_fault.setPlainText("-")
+        self.d_fault.setMinimumHeight(60)
+        self.d_fault.setMaximumHeight(120)
+        self.d_fault.setStyleSheet(
+            "QTextEdit { background-color: #FAFBFC; border: 1px solid #EAEDF2; "
+            "border-radius: 6px; padding: 8px; font-size: 12px; }"
+        )
         form3.addRow("订单号：", self.d_order)
         form3.addRow("产品型号：", self.d_model)
         form3.addRow("批次号：", self.d_batch)
@@ -583,8 +740,8 @@ class TicketListView(QWidget):
         self.d_reply.setReadOnly(True)
         self.d_reply.setMaximumHeight(100)
         self.d_reply.setStyleSheet(
-            "QTextEdit { background-color: #F8F9FA; border: 1px solid #E0E0E0; "
-            "border-radius: 4px; padding: 8px; font-size: 12px; }"
+            "QTextEdit { background-color: #FAFBFC; border: 1px solid #EAEDF2; "
+            "border-radius: 6px; padding: 8px; font-size: 12px; }"
         )
         reply_layout.addWidget(self.d_reply)
         self.detail_reply.setVisible(False)
@@ -603,27 +760,27 @@ class TicketListView(QWidget):
         self.action_layout = QHBoxLayout()
         self.btn_change_status = QPushButton("变更状态")
         self.btn_change_status.setStyleSheet(
-            "QPushButton { background-color: #3498DB; color: #FFFFFF; border: none; "
-            "border-radius: 4px; padding: 8px 16px; font-weight: bold; font-size: 13px; }"
-            "QPushButton:hover { background-color: #2980B9; }"
+            "QPushButton { background-color: #1E2329; color: #FFFFFF; border: none; "
+            "border-radius: 6px; padding: 8px 16px; font-weight: 500; font-size: 13px; }"
+            "QPushButton:hover { background-color: #2A3038; }"
         )
         self.btn_change_status.clicked.connect(self._on_change_status)
         self.action_layout.addWidget(self.btn_change_status)
 
         self.btn_escalate = QPushButton("升级工单")
         self.btn_escalate.setStyleSheet(
-            "QPushButton { background-color: #FF9800; color: #FFFFFF; border: none; "
-            "border-radius: 4px; padding: 8px 16px; font-weight: bold; font-size: 13px; }"
-            "QPushButton:hover { background-color: #F57C00; }"
+            "QPushButton { background-color: #C77D3C; color: #FFFFFF; border: none; "
+            "border-radius: 6px; padding: 8px 16px; font-weight: 500; font-size: 13px; }"
+            "QPushButton:hover { background-color: #B56E32; }"
         )
         self.btn_escalate.clicked.connect(self._on_escalate)
         self.action_layout.addWidget(self.btn_escalate)
 
         self.btn_reassign = QPushButton("转派工单")
         self.btn_reassign.setStyleSheet(
-            "QPushButton { background-color: #9B59B6; color: #FFFFFF; border: none; "
-            "border-radius: 4px; padding: 8px 16px; font-weight: bold; font-size: 13px; }"
-            "QPushButton:hover { background-color: #8E44AD; }"
+            "QPushButton { background-color: #1E2329; color: #FFFFFF; border: none; "
+            "border-radius: 6px; padding: 8px 16px; font-weight: 500; font-size: 13px; }"
+            "QPushButton:hover { background-color: #2A3038; }"
         )
         self.btn_reassign.clicked.connect(self._on_reassign)
         self.action_layout.addWidget(self.btn_reassign)
@@ -651,6 +808,12 @@ class TicketListView(QWidget):
         self.search_btn.setEnabled(enabled)
         self.reset_btn.setEnabled(enabled)
         self.refresh_btn.setEnabled(enabled)
+        self.keyword_search_btn.setEnabled(enabled)
+        self.clear_search_btn.setEnabled(enabled)
+        self.export_btn.setEnabled(enabled)
+        self.batch_reassign_btn.setEnabled(enabled)
+        self.batch_escalate_btn.setEnabled(enabled)
+        self.batch_close_btn.setEnabled(enabled)
         self.prev_btn.setEnabled(enabled and self._current_page > 1)
         self.next_btn.setEnabled(enabled and self._current_page < self._total_pages)
 
@@ -781,15 +944,18 @@ class TicketListView(QWidget):
         self.d_order.setText(extracted.get("order_id") or "-")
         self.d_model.setText(extracted.get("model_number") or "-")
         self.d_batch.setText(extracted.get("batch_code") or "-")
-        self.d_fault.setText(extracted.get("core_fault_desc") or "-")
+        self.d_fault.setPlainText(extracted.get("core_fault_desc") or "-")
 
         assessment = ticket.get("agent_business_assessment") or {}
         self.d_category.setText(CATEGORY_MAP.get(assessment.get("issue_category"), assessment.get("issue_category") or "-"))
-        self.d_impact.setText(assessment.get("business_impact") or "-")
-        self.d_warranty.setText(assessment.get("warranty_status") or "-")
+        self.d_impact.setText(IMPACT_MAP.get(assessment.get("business_impact"), assessment.get("business_impact") or "-"))
+        self.d_warranty.setText(WARRANTY_MAP.get(assessment.get("warranty_status"), assessment.get("warranty_status") or "-"))
 
-        self.d_routing.setText(str(ticket.get("routing_decision") or "-"))
-        self.d_sop.setText(str(ticket.get("sop_applied") or "-"))
+        routing = ticket.get("routing_decision") or "-"
+        self.d_routing.setText(ROUTING_MAP.get(routing, routing) if routing != "-" else "-")
+
+        sop = ticket.get("sop_applied") or "-"
+        self.d_sop.setText(ACTION_TYPE_MAP.get(sop, sop) if sop != "-" else "-")
 
         reply = ticket.get("auto_reply_sent") or ""
         self.d_reply.setPlainText(str(reply) if reply else "（无自动回复）")
@@ -870,6 +1036,8 @@ class TicketListView(QWidget):
     def _on_reset(self):
         self.status_combo.setCurrentIndex(0)
         self.urgency_combo.setCurrentIndex(0)
+        self._search_keyword = ""
+        self.search_input.clear()
         self._current_page = 1
         self._load_tickets()
 
@@ -885,6 +1053,172 @@ class TicketListView(QWidget):
         if self._current_page < self._total_pages:
             self._current_page += 1
             self._load_tickets()
+
+    def _on_keyword_search(self):
+        """关键词搜索工单"""
+        keyword = self.search_input.text().strip()
+        if len(keyword) < 2:
+            if keyword:
+                QMessageBox.warning(self, "提示", "搜索关键词至少需要2个字符")
+            return
+        self._search_keyword = keyword
+        self._current_page = 1
+        self._do_keyword_search()
+
+    def _do_keyword_search(self):
+        """执行关键词搜索"""
+        self._set_controls_enabled(False)
+        status = self.status_combo.currentData() or None
+        urgency = self.urgency_combo.currentData() or None
+
+        self._search_thread = SearchTicketsThread(
+            self.api_client, self._search_keyword,
+            status=status, urgency_level=urgency,
+            page=self._current_page, page_size=20
+        )
+        self._search_thread.finished.connect(self._on_tickets_loaded)
+        self._search_thread.start()
+
+    def _on_clear_search(self):
+        """清除搜索条件"""
+        self._search_keyword = ""
+        self.search_input.clear()
+        self._current_page = 1
+        self._load_tickets()
+
+    def _on_selection_changed(self):
+        """表格选择变更时更新选中计数"""
+        selected_rows = self.table.selectionModel().selectedRows()
+        count = len(selected_rows)
+        self.selected_count_label.setText(f"已选 {count} 项")
+
+    def _get_selected_ticket_ids(self):
+        """获取选中行的工单ID列表"""
+        selected_rows = self.table.selectionModel().selectedRows()
+        ticket_ids = []
+        for index in selected_rows:
+            row = index.row()
+            if 0 <= row < len(self._tickets):
+                tid = self._tickets[row].get("ticket_id")
+                if tid:
+                    ticket_ids.append(tid)
+        return ticket_ids
+
+    def _on_batch_reassign(self):
+        """批量转派工单"""
+        ticket_ids = self._get_selected_ticket_ids()
+        if not ticket_ids:
+            QMessageBox.warning(self, "提示", "请先选择要转派的工单")
+            return
+        dialog = ReassignDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            result = dialog.get_result()
+            if result:
+                confirm = QMessageBox.question(
+                    self, "确认批量转派",
+                    f"确定要转派 {len(ticket_ids)} 个工单给 {result['target_username']} 吗？",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                if confirm == QMessageBox.StandardButton.Yes:
+                    self._exec_action(
+                        self.api_client.batch_reassign,
+                        ticket_ids, result["target_username"],
+                        result["target_role"], result["reason"]
+                    )
+
+    def _on_batch_escalate(self):
+        """批量升级工单"""
+        ticket_ids = self._get_selected_ticket_ids()
+        if not ticket_ids:
+            QMessageBox.warning(self, "提示", "请先选择要升级的工单")
+            return
+        reason, ok = QInputDialog.getText(self, "批量升级", "请输入升级原因：")
+        if ok and reason.strip():
+            confirm = QMessageBox.question(
+                self, "确认批量升级",
+                f"确定要升级 {len(ticket_ids)} 个工单吗？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if confirm == QMessageBox.StandardButton.Yes:
+                self._exec_action(
+                    self.api_client.batch_escalate,
+                    ticket_ids, reason.strip()
+                )
+
+    def _on_batch_close(self):
+        """批量关闭工单"""
+        ticket_ids = self._get_selected_ticket_ids()
+        if not ticket_ids:
+            QMessageBox.warning(self, "提示", "请先选择要关闭的工单")
+            return
+        reason, ok = QInputDialog.getText(self, "批量关闭", "请输入关闭原因：")
+        if ok and reason.strip():
+            confirm = QMessageBox.question(
+                self, "确认批量关闭",
+                f"确定要关闭 {len(ticket_ids)} 个工单吗？此操作不可撤销！",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if confirm == QMessageBox.StandardButton.Yes:
+                self._exec_action(
+                    self.api_client.batch_close,
+                    ticket_ids, reason.strip()
+                )
+
+    def _on_export(self):
+        """导出工单数据"""
+        dialog = ExportDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            fmt = dialog.get_format()
+            status = self.status_combo.currentData() or None
+            urgency = self.urgency_combo.currentData() or None
+
+            # 选择保存路径
+            if fmt == "xlsx":
+                filter_str = "Excel 文件 (*.xlsx)"
+                default_name = "工单数据.xlsx"
+            else:
+                filter_str = "CSV 文件 (*.csv)"
+                default_name = "工单数据.csv"
+
+            save_path, _ = QFileDialog.getSaveFileName(
+                self, "保存导出文件", default_name, filter_str
+            )
+            if not save_path:
+                return
+
+            self.export_btn.setEnabled(False)
+            self.export_btn.setText("导出中...")
+
+            self._export_thread = ExportThread(
+                self.api_client, format=fmt,
+                status=status, urgency_level=urgency
+            )
+            self._export_thread.finished.connect(lambda result: self._on_export_done(result, save_path))
+            self._export_thread.error.connect(self._on_export_error)
+            self._export_thread.start()
+
+    def _on_export_done(self, result, save_path):
+        """导出完成"""
+        self.export_btn.setEnabled(True)
+        self.export_btn.setText("导出")
+
+        if result is None:
+            QMessageBox.warning(self, "导出失败", "无法获取导出数据，请检查后端服务")
+            return
+
+        file_bytes, content_type, filename = result
+        try:
+            with open(save_path, "wb") as f:
+                f.write(file_bytes)
+            QMessageBox.information(self, "导出成功", f"数据已导出到：\n{save_path}")
+        except Exception as e:
+            QMessageBox.warning(self, "导出失败", f"保存文件失败：{str(e)}")
+
+    def _on_export_error(self, error_msg):
+        """导出出错"""
+        self.export_btn.setEnabled(True)
+        self.export_btn.setText("导出")
+        QMessageBox.warning(self, "导出失败", f"导出过程中出错：{error_msg}")
 
     def _on_change_status(self):
         if not self._selected_ticket:
@@ -942,5 +1276,24 @@ class TicketListView(QWidget):
         elif result.get("code") != 0:
             QMessageBox.warning(self, "操作失败", result.get("message", "未知错误"))
         else:
-            QMessageBox.information(self, "操作成功", "操作已成功执行")
+            # 检查是否是批量操作结果
+            data = result.get("data", {})
+            if isinstance(data, dict) and "success_count" in data:
+                success = data.get("success_count", 0)
+                failed = data.get("failed_count", 0)
+                msg = f"操作完成：成功 {success} 个"
+                if failed > 0:
+                    msg += f"，失败 {failed} 个"
+                    failed_list = data.get("failed_list", [])
+                    if failed_list:
+                        details = "\n".join([
+                            f"  - {f.get('ticket_id', '?')}: {f.get('reason', '未知')}"
+                            for f in failed_list[:5]
+                        ])
+                        if len(failed_list) > 5:
+                            details += f"\n  ... 共 {len(failed_list)} 条失败"
+                        msg += f"\n失败详情：\n{details}"
+                QMessageBox.information(self, "批量操作结果", msg)
+            else:
+                QMessageBox.information(self, "操作成功", "操作已成功执行")
             self._load_tickets()

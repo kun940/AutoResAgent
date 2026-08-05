@@ -10,6 +10,10 @@ class SopKnowledgeCreate(BaseModel):
     content: str
     urgency_level: Optional[str] = None
     keywords: Optional[List[str]] = None
+    # v1.3: 紧急止损动作列表
+    emergency_actions: Optional[List[str]] = None
+    # v1.3: 适用场景标签
+    scenario_tags: Optional[List[str]] = None
 
 
 class SopKnowledgeUpdate(BaseModel):
@@ -30,6 +34,10 @@ class SopKnowledgeResponse(BaseModel):
     content: str
     urgency_level: Optional[str] = None
     keywords: Optional[List[str]] = None
+    # v1.3: 紧急止损动作列表
+    emergency_actions: Optional[List[str]] = None
+    # v1.3: 适用场景标签
+    scenario_tags: Optional[List[str]] = None
     is_active: int = 1
     version: int = 1
     created_at: Optional[datetime] = None
