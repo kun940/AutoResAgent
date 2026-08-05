@@ -1,7 +1,6 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QGroupBox, QProgressBar, QSizePolicy, QFrame, QScrollArea,
-    QTableWidget, QTableWidgetItem, QHeaderView
+    QGroupBox, QProgressBar, QSizePolicy, QFrame, QScrollArea
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QParallelAnimationGroup, QPropertyAnimation
 from PyQt6.QtGui import QFont, QColor
@@ -184,6 +183,10 @@ class DashboardView(QWidget):
         self._load_thread = None
         self._sub_thread = None
         self._quality_thread = None
+        # 缓存下级工单汇总数据，供"查看详情"对话框使用
+        self._sub_data = None
+        # 持有详情对话框引用，防止被 Python GC 回收导致窗口闪退
+        self._detail_dialog = None
         self._setup_ui()
         self._load_data()
 
@@ -252,31 +255,26 @@ class DashboardView(QWidget):
         self.overdue_layout.addWidget(self.overdue_label)
         main_layout.addWidget(self.overdue_group)
 
-        # 下级工单概览区域（仅高级别角色显示）
+        # 下级工单概览区域（仅高级别角色显示；区块内只保留查看详情入口，汇总与明细均在对话框中查看）
         self.subordinate_group = QGroupBox("📋 下级工单处理概览")
         subordinate_outer = QVBoxLayout(self.subordinate_group)
-        subordinate_outer.setContentsMargins(0, 0, 0, 0)
-        subordinate_outer.setSpacing(0)
+        subordinate_outer.setContentsMargins(12, 10, 12, 10)
+        subordinate_outer.setSpacing(6)
 
-        self.subordinate_scroll = QScrollArea()
-        self.subordinate_scroll.setWidgetResizable(True)
-        self.subordinate_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        self.subordinate_scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
-            "QScrollBar:vertical { width: 8px; background: #F0F0F0; border-radius: 4px; }"
-            "QScrollBar::handle:vertical { background: #BDC3C7; border-radius: 4px; min-height: 30px; }"
-            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-        )
+        # 仅保留查看详情按钮，汇总数据与待处理工单明细均在对话框中查看
+        subordinate_btn_row = QHBoxLayout()
+        subordinate_btn_row.addStretch()
+        self.subordinate_detail_btn = QPushButton("查看详情")
+        self.subordinate_detail_btn.setProperty("secondary", True)
+        self.subordinate_detail_btn.setFixedSize(110, 32)
+        self.subordinate_detail_btn.setEnabled(False)
+        self.subordinate_detail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.subordinate_detail_btn.clicked.connect(self._on_view_subordinate_detail)
+        subordinate_btn_row.addWidget(self.subordinate_detail_btn)
+        subordinate_outer.addLayout(subordinate_btn_row)
 
-        self.subordinate_container = QWidget()
-        self.subordinate_layout = QVBoxLayout(self.subordinate_container)
-        self.subordinate_layout.setSpacing(12)
-        self.subordinate_layout.setContentsMargins(8, 8, 8, 8)
-        self.subordinate_scroll.setWidget(self.subordinate_container)
-
-        subordinate_outer.addWidget(self.subordinate_scroll)
         self.subordinate_group.setVisible(False)
-        main_layout.addWidget(self.subordinate_group, 2)
+        main_layout.addWidget(self.subordinate_group, 0)
 
     def _has_subordinates(self):
         """当前角色是否有下级"""
@@ -320,80 +318,30 @@ class DashboardView(QWidget):
     def _on_subordinate_loaded(self, result):
         if result is None or result.get("code") != 0:
             self.subordinate_group.setVisible(False)
+            self._sub_data = None
+            self.subordinate_detail_btn.setEnabled(False)
             return
 
         sub_data = result.get("data", [])
         if not sub_data:
             self.subordinate_group.setVisible(False)
+            self._sub_data = None
+            self.subordinate_detail_btn.setEnabled(False)
             return
 
+        # 主看板区块内只保留查看详情入口；汇总与明细均在对话框中查看
         self.subordinate_group.setVisible(True)
-        self._clear_layout(self.subordinate_layout)
+        self._sub_data = sub_data
+        self.subordinate_detail_btn.setEnabled(True)
 
-        for item in sub_data:
-            role_display = item.get("role_display", item.get("role", "未知"))
-            total = item.get("total_count", 0)
-            pending = item.get("pending_count", 0)
-            resolved = item.get("resolved_count", 0)
-            pending_tickets = item.get("pending_tickets", [])
-
-            section_title = f"{role_display}  —  总计 {total} | 待处理 {pending} | 已解决 {resolved}"
-            section = CollapsibleSection(section_title)
-
-            # 待处理工单详情
-            if pending_tickets:
-                for t in pending_tickets:
-                    row = QHBoxLayout()
-                    row.setSpacing(8)
-
-                    tid = t.get("ticket_id", "-")
-                    tid_label = QLabel(tid)
-                    tid_label.setFixedWidth(140)
-                    tid_label.setStyleSheet("font-size: 12px; color: #3498DB; font-weight: bold;")
-                    row.addWidget(tid_label)
-
-                    customer = t.get("customer_name", "未知")
-                    customer_label = QLabel(customer)
-                    customer_label.setFixedWidth(60)
-                    customer_label.setStyleSheet("font-size: 12px; color: #2C3E50;")
-                    row.addWidget(customer_label)
-
-                    urgency = t.get("urgency_level", "")
-                    urgency_text = URGENCY_LABELS.get(urgency, urgency or "-")
-                    urgency_color = {"High_Priority": "#FF4444", "Medium_Priority": "#FF9800", "Low_Priority": "#4CAF50"}.get(urgency, "#95A5A6")
-                    urgency_label = QLabel(f"  {urgency_text}  ")
-                    urgency_label.setStyleSheet(
-                        f"background-color: {urgency_color}; color: #FFFFFF; "
-                        f"border-radius: 10px; padding: 2px 8px; font-size: 11px; font-weight: bold;"
-                    )
-                    urgency_label.setFixedHeight(22)
-                    row.addWidget(urgency_label)
-
-                    status = t.get("status", "")
-                    status_text = STATUS_LABELS.get(status, status or "-")
-                    status_label = QLabel(f"  {status_text}  ")
-                    status_label.setStyleSheet(
-                        "background-color: #D6EAF8; color: #2471A3; "
-                        "border-radius: 10px; padding: 2px 8px; font-size: 11px; font-weight: bold;"
-                    )
-                    status_label.setFixedHeight(22)
-                    row.addWidget(status_label)
-
-                    created = t.get("created_at", "-")
-                    if created and len(created) >= 16:
-                        created = created[:16].replace("T", " ")
-                    time_label = QLabel(created)
-                    time_label.setStyleSheet("font-size: 12px; color: #7F8C8D;")
-                    row.addWidget(time_label)
-
-                    row.addStretch()
-                    section.add_layout(row)
-            else:
-                no_pending = QLabel("暂无待处理工单")
-                no_pending.setStyleSheet("font-size: 12px; color: #BDC3C7; padding: 4px 0;")
-                section.add_widget(no_pending)
-
-            self.subordinate_layout.addWidget(section)
+    def _on_view_subordinate_detail(self):
+        """点击"查看详情"：弹出下级工单处理详情对话框（新窗口）"""
+        if not self._sub_data:
+            return
+        # 局部 import 避免与 subordinate_detail_dialog 形成模块级循环依赖
+        from desktop.widgets.subordinate_detail_dialog import SubordinateDetailDialog
+        self._detail_dialog = SubordinateDetailDialog(self._sub_data, parent=self)
+        self._detail_dialog.show()
 
     def _update_cards(self, data):
         self.card_total.set_value(data.get("total_tickets", 0))
