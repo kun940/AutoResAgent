@@ -150,9 +150,39 @@ class VlmAnalyzer:
             ),
             "overall_assessment": str(result.get("overall_assessment", "")),
             "suggestion": str(result.get("suggestion", "")),
+            # v2.1: VLM 直接提取铭牌字段（sn_code/model_info/batch_no/order_no）
+            "sn_code": self._clean_nameplate(result.get("sn_code")),
+            "model_info": self._clean_nameplate(result.get("model_info")),
+            "batch_no": self._clean_nameplate(result.get("batch_no")),
+            "order_no": self._clean_nameplate(result.get("order_no")),
         }
 
     @staticmethod
     def _validate_level(level: str) -> str:
         valid = {"none", "minor", "moderate", "severe"}
         return level if level in valid else "none"
+
+    @staticmethod
+    def _clean_nameplate(value) -> Optional[str]:
+        """清洗 VLM 提取的铭牌字段：空值/拒识占位/超长 → None，防幻觉与异常输出。
+
+        不做正则强校验（VLM 语义理解读取的值不一定符合 OCR 文本正则），
+        仅剔除明显无效输出，保留 VLM 读取的原始值。
+        """
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            value = str(value)
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        # VLM 拒识/无值占位 → None
+        if cleaned.lower() in {
+            "none", "null", "n/a", "na", "unknown",
+            "未知", "无", "未识别", "未识别到", "无法识别", "不清楚", "不可见",
+        }:
+            return None
+        # 超长截断（防异常输出污染 JSON 列）
+        if len(cleaned) > 100:
+            cleaned = cleaned[:100]
+        return cleaned

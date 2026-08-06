@@ -691,6 +691,7 @@ class TicketListView(QWidget):
         self.detail_extracted = QGroupBox("提取数据")
         form3 = QFormLayout(self.detail_extracted)
         form3.setSpacing(8)
+        self.d_sn = QLabel("-")
         self.d_order = QLabel("-")
         self.d_model = QLabel("-")
         self.d_batch = QLabel("-")
@@ -703,6 +704,7 @@ class TicketListView(QWidget):
             "QTextEdit { background-color: #FAFBFC; border: 1px solid #EAEDF2; "
             "border-radius: 6px; padding: 8px; font-size: 12px; }"
         )
+        form3.addRow("SN码：", self.d_sn)
         form3.addRow("订单号：", self.d_order)
         form3.addRow("产品型号：", self.d_model)
         form3.addRow("批次号：", self.d_batch)
@@ -941,9 +943,12 @@ class TicketListView(QWidget):
         self.d_phone.setText(ticket.get("customer_phone") or "-")
 
         extracted = ticket.get("extracted_data") or {}
-        self.d_order.setText(extracted.get("order_id") or "-")
-        self.d_model.setText(extracted.get("model_number") or "-")
-        self.d_batch.setText(extracted.get("batch_code") or "-")
+        image_ia = ticket.get("image_analysis") or {}
+        # 铭牌字段优先取图片识别结果(image_analysis)，文本提取(extracted_data)作兜底
+        self.d_sn.setText(image_ia.get("sn_code") or "-")
+        self.d_order.setText(image_ia.get("order_no") or extracted.get("order_id") or "-")
+        self.d_model.setText(image_ia.get("model_info") or extracted.get("model_number") or "-")
+        self.d_batch.setText(image_ia.get("batch_no") or extracted.get("batch_code") or "-")
         self.d_fault.setPlainText(extracted.get("core_fault_desc") or "-")
 
         assessment = ticket.get("agent_business_assessment") or {}
