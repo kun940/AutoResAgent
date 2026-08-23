@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from typing import Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -15,6 +16,18 @@ VALID_CATEGORIES = {e.value for e in IssueCategory}
 VALID_IMPACTS = {e.value for e in BusinessImpact}
 VALID_URGENCIES = {e.value for e in UrgencyLevel}
 VALID_WARRANTIES = {e.value for e in WarrantyStatus}
+
+# v1.4: 批次场景关键词匹配——"批次"需排除"批次号/批次编号/批次代码/批次码"等标识符场景
+# 避免用户在问题描述中填写批次号作为产品标识时被误判为批次缺陷
+BATCH_KEYWORDS = ["批量", "多台", "群体", "同故障", "这批", "这批产品"]
+BATCH_REGEX = re.compile(r"批次(?!号|编号|代码|码|ID|id)")
+
+
+def _match_batch_defect(text: str) -> bool:
+    """判断文本是否指示批次缺陷场景（排除"批次号"等标识符场景）"""
+    if not text:
+        return False
+    return any(kw in text for kw in BATCH_KEYWORDS) or bool(BATCH_REGEX.search(text))
 
 
 class AssessmentAgent:
@@ -87,7 +100,8 @@ class AssessmentAgent:
                     issue_category = "Hardware_Malfunction"
 
             # 批次/批量场景：群体性风险，强制Batch_Defect + High_Priority
-            if any(kw in original_text for kw in ["批次", "批量", "多台", "群体", "同故障", "这批", "这批产品"]):
+            # v1.4: 排除"批次号/批次编号"等标识符场景，避免用户填写批次号时被误判
+            if _match_batch_defect(original_text):
                 urgency_level = "High_Priority"
                 business_impact = "Group_Risk"
                 issue_category = "Batch_Defect"
@@ -168,7 +182,8 @@ class AssessmentAgent:
                 "warranty_status": WarrantyStatus.IN_WARRANTY.value,
             }
 
-        if any(kw in fault for kw in ["批量", "批次", "多台"]):
+        # v1.4: 排除"批次号/批次编号"等标识符场景，避免误判
+        if _match_batch_defect(fault):
             return {
                 "issue_category": IssueCategory.BATCH_DEFECT.value,
                 "business_impact": BusinessImpact.GROUP_RISK.value,

@@ -67,6 +67,7 @@ STATUS_ORDER = {
 @router.post("/submit", response_model=ApiResponse)
 async def customer_submit(
     text: str = Form(""),
+    customer_name: str = Form(None),
     customer_phone: str = Form(None),
     images: list[UploadFile] = File(default=[]),
     db: AsyncSession = Depends(get_db),
@@ -98,6 +99,7 @@ async def customer_submit(
     result = await ticket_service.submit_complaint(
         db=db,
         text=text,
+        customer_name=customer_name,
         customer_phone=customer_phone,
         image_paths=image_paths if image_paths else None,
     )

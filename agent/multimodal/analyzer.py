@@ -134,6 +134,7 @@ class MultimodalAnalyzer:
                     logger.warning(f"SN info extract failed in L2: {sn_err}")
                     result.update({
                         "sn_code": None, "model_info": None, "batch_no": None,
+                        "order_no": None,
                     })
                 logger.info(
                     f"OCR+LLM analysis done: damage_level={result.get('damage_level')}"
@@ -151,6 +152,7 @@ class MultimodalAnalyzer:
                 result.setdefault("sn_code", None)
                 result.setdefault("model_info", None)
                 result.setdefault("batch_no", None)
+                result.setdefault("order_no", None)
                 result.setdefault("vlm_latency_ms", None)
                 logger.info(
                     f"Pillow analysis done: damage_level={result.get('damage_level')}"
@@ -171,7 +173,9 @@ class MultimodalAnalyzer:
         """L1 主路径：并行执行 VLM 分析与 OCR SN 提取，合并结果
 
         - VLM 失败 → 整体抛异常，由 analyze_images 捕获降级到 L2
-        - OCR 失败 → 不降级，仅 SN 字段置 None
+        - OCR 失败 → 不降级，仅 OCR 字段置 None
+        - v2.1: VLM 直接提取铭牌字段（sn_code/model_info/batch_no/order_no），
+          优先于 OCR；OCR 仅补充 VLM 未提取到的 sn_code/model_info/batch_no
         """
         vlm_task = self.vlm_analyzer.analyze(valid_images, text_context)
 
@@ -190,18 +194,23 @@ class MultimodalAnalyzer:
         if isinstance(vlm_result, Exception):
             raise vlm_result
 
-        # OCR 异常 → 不降级，仅 SN 字段置 None
+        # OCR 异常 → 不降级，仅 OCR 字段置 None
         if isinstance(sn_result, Exception):
             logger.warning(
                 f"OCR SN extract failed, sn fields set to None: {sn_result}"
             )
-            sn_result = {
-                "sn_code": None,
-                "model_info": None,
-                "batch_no": None,
-            }
+            sn_result = {}
 
-        vlm_result.update(sn_result)
+        # v2.1: VLM 提取的铭牌字段优先；OCR 仅补充 VLM 未提取到的字段
+        # （OCR 不可用时 sn_result 为空 dict，VLM 结果原样保留）
+        if not isinstance(sn_result, dict):
+            sn_result = {}
+        for key in ("sn_code", "model_info", "batch_no", "order_no"):
+            if not vlm_result.get(key):
+                ocr_val = sn_result.get(key)
+                if ocr_val:
+                    vlm_result[key] = ocr_val
+            vlm_result.setdefault(key, None)
         return vlm_result
 
     def _safe_extract_sn(self, valid_images: list[dict]) -> dict:
@@ -233,5 +242,6 @@ class MultimodalAnalyzer:
             "sn_code": None,
             "model_info": None,
             "batch_no": None,
+            "order_no": None,
             "vlm_latency_ms": None,
         }

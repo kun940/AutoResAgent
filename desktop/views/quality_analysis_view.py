@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QGroupBox, QGridLayout, QSizePolicy, QFileDialog,
     QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView,
-    QAbstractItemView
+    QAbstractItemView, QScrollArea, QFrame
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 
@@ -159,7 +159,23 @@ class QualityAnalysisView(QWidget):
         self._load_data()
 
     def _setup_ui(self):
-        main_layout = QVBoxLayout(self)
+        # 外层布局：用 QScrollArea 包裹全部内容，防止窗口高度不足时
+        # 下半行图表和导出按钮被推出可视区域而看不到
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        self._scroll_area = QScrollArea()
+        self._scroll_area.setWidgetResizable(True)
+        self._scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+
+        content_widget = QWidget()
+        content_widget.setObjectName("content_area")
+
+        main_layout = QVBoxLayout(content_widget)
         main_layout.setContentsMargins(24, 24, 24, 24)
         main_layout.setSpacing(16)
 
@@ -254,6 +270,10 @@ class QualityAnalysisView(QWidget):
         bottom_layout.addWidget(self.export_csv_btn)
 
         main_layout.addLayout(bottom_layout)
+
+        # 将内容容器放入滚动区域，再将滚动区域加入外层布局
+        self._scroll_area.setWidget(content_widget)
+        outer_layout.addWidget(self._scroll_area)
 
     def _setup_chart_layout(self, main_layout):
         """使用 matplotlib 创建图表布局"""
